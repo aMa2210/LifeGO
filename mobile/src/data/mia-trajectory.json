@@ -1,0 +1,133 @@
+{
+  "user": {
+    "name": "Mia Tanaka",
+    "city": "Tokyo",
+    "seed": "mia"
+  },
+  "checkins": [
+    {
+      "day": 1,
+      "timestamp": "2026-05-20T09:30:00+09:00",
+      "poiId": "blue-bottle-aoyama",
+      "weight": 3,
+      "tags": ["coffee", "indie"],
+      "note": "Morning ritual.",
+      "attributeDelta": { "foodie": 1, "aesthete": 1 }
+    },
+    {
+      "day": 1,
+      "timestamp": "2026-05-20T11:00:00+09:00",
+      "poiId": "yoyogi-park",
+      "weight": 1,
+      "tags": ["solo-walk"],
+      "attributeDelta": { "athletic": 1, "explorer": 1 }
+    },
+    {
+      "day": 1,
+      "timestamp": "2026-05-20T14:00:00+09:00",
+      "poiId": "teamlab-borderless",
+      "weight": 5,
+      "tags": ["immersive-art", "mind-blown"],
+      "note": "Lost myself in the lamp forest.",
+      "isSpecial": true,
+      "attributeDelta": { "aesthete": 4, "explorer": 3 }
+    },
+    {
+      "day": 1,
+      "timestamp": "2026-05-20T19:30:00+09:00",
+      "poiId": "ichiran-shibuya",
+      "weight": 3,
+      "tags": ["solo-dining"],
+      "attributeDelta": { "foodie": 2, "social": 1 }
+    },
+    {
+      "day": 1,
+      "timestamp": "2026-05-20T22:30:00+09:00",
+      "poiId": "omoide-yokocho",
+      "weight": 3,
+      "tags": ["nightlife", "yakitori"],
+      "note": "Smoke and beer under the rails.",
+      "attributeDelta": { "social": 2 }
+    },
+
+    {
+      "day": 2,
+      "timestamp": "2026-05-21T07:00:00+09:00",
+      "poiId": "imperial-palace-run",
+      "weight": 3,
+      "tags": ["morning-run"],
+      "isSpecial": true,
+      "attributeDelta": { "athletic": 5 }
+    },
+    {
+      "day": 2,
+      "timestamp": "2026-05-21T12:30:00+09:00",
+      "poiId": "wework-shibuya",
+      "weight": 3,
+      "tags": ["work", "deep-focus"],
+      "attributeDelta": { "productive": 3, "social": 1 }
+    },
+    {
+      "day": 2,
+      "timestamp": "2026-05-21T16:00:00+09:00",
+      "poiId": "tsutaya-daikanyama",
+      "weight": 3,
+      "tags": ["browsing", "design-books"],
+      "attributeDelta": { "aesthete": 2 }
+    },
+    {
+      "day": 2,
+      "timestamp": "2026-05-21T22:30:00+09:00",
+      "poiId": "golden-gai-albatross",
+      "weight": 5,
+      "tags": ["jazz-bar", "stranger-chat"],
+      "note": "Five seats, one bartender, jazz on vinyl.",
+      "attributeDelta": { "social": 3 }
+    },
+
+    {
+      "day": 3,
+      "timestamp": "2026-05-22T08:00:00+09:00",
+      "poiId": "yoga-plus-omotesando",
+      "weight": 3,
+      "tags": ["yoga"],
+      "attributeDelta": { "athletic": 2 }
+    },
+    {
+      "day": 3,
+      "timestamp": "2026-05-22T12:00:00+09:00",
+      "poiId": "tsukiji-outer",
+      "weight": 5,
+      "tags": ["sushi", "market"],
+      "photoUrl": "/seed/tsukiji-sushi.jpg",
+      "note": "Best uni I've ever had.",
+      "attributeDelta": { "foodie": 3, "explorer": 2 }
+    },
+    {
+      "day": 3,
+      "timestamp": "2026-05-22T15:30:00+09:00",
+      "poiId": "kokkai-toshokan",
+      "weight": 3,
+      "tags": ["study", "quiet"],
+      "attributeDelta": { "productive": 3, "aesthete": 1 }
+    },
+    {
+      "day": 3,
+      "timestamp": "2026-05-22T17:00:00+09:00",
+      "poiId": "nakameguro-canal",
+      "weight": 1,
+      "tags": ["solo-walk"],
+      "attributeDelta": { "explorer": 1, "aesthete": 1 }
+    },
+    {
+      "day": 3,
+      "timestamp": "2026-05-22T22:30:00+09:00",
+      "poiId": "shimokita-shelter",
+      "weight": 5,
+      "tags": ["indie-music", "discovery"],
+      "isSpecial": true,
+      "note": "An unknown band, but I'll remember their name.",
+      "attributeDelta": { "social": 3, "aesthete": 2 }
+    }
+  ]
+}

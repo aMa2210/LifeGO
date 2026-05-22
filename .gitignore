@@ -39,3 +39,33 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ── Prisma / SQLite (recursive — Prisma sometimes creates nested prisma/ paths) ──
+**/*.db
+**/*.db-journal
+
+# ── Mobile (Expo) artifacts ──
+mobile/node_modules
+mobile/.expo
+mobile/.expo-shared
+mobile/dist
+mobile/web-build
+mobile/ios
+mobile/android
+mobile/*.jks
+mobile/*.p8
+mobile/*.p12
+mobile/*.key
+mobile/*.mobileprovision
+
+# Auto-generated expo router types
+mobile/.expo/types
+mobile/expo-env.d.ts
+
+# ── Dev session transient logs ──
+*.log
+.expo-init.log
+.expo-deps.log
+.expo-peers.log
+.npm-install*.log
+mobile/.expo-dev.log

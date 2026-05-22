@@ -1,0 +1,23 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sticker background (round) -->
+  <circle cx="50" cy="50" r="44" fill="#fef3e2" stroke="#3d2817" stroke-width="3"/>
+  <circle cx="50" cy="50" r="42" fill="none" stroke="#3d2817" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+  <!-- Ears -->
+  <path d="M 24 32 L 32 12 L 40 30 Z" fill="#8fa3b8" stroke="#3d2817" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M 76 32 L 68 12 L 60 30 Z" fill="#8fa3b8" stroke="#3d2817" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- Inner ears -->
+  <path d="M 29 27 L 32 18 L 35 27 Z" fill="#f5b8c6"/>
+  <path d="M 71 27 L 68 18 L 65 27 Z" fill="#f5b8c6"/>
+  <!-- Face -->
+  <path d="M 24 36 Q 24 65 50 76 Q 76 65 76 36 Q 62 28 50 28 Q 38 28 24 36 Z" fill="#a8b8c8" stroke="#3d2817" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- Snout -->
+  <path d="M 36 56 Q 50 72 64 56 Q 60 64 50 66 Q 40 64 36 56 Z" fill="#fef3e2" stroke="#3d2817" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Nose -->
+  <ellipse cx="50" cy="56" rx="4.5" ry="3" fill="#3d2817"/>
+  <!-- Eyes -->
+  <circle cx="40" cy="45" r="2.8" fill="#3d2817"/>
+  <circle cx="60" cy="45" r="2.8" fill="#3d2817"/>
+  <!-- Eye sparkles -->
+  <circle cx="41" cy="44" r="0.9" fill="#fef3e2"/>
+  <circle cx="61" cy="44" r="0.9" fill="#fef3e2"/>
+</svg>

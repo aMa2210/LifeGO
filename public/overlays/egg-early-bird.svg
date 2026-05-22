@@ -1,0 +1,22 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sun rays -->
+  <g stroke="#f5a623" stroke-width="4" stroke-linecap="round">
+    <line x1="50" y1="10" x2="50" y2="22"/>
+    <line x1="50" y1="78" x2="50" y2="90"/>
+    <line x1="10" y1="50" x2="22" y2="50"/>
+    <line x1="78" y1="50" x2="90" y2="50"/>
+    <line x1="20" y1="20" x2="29" y2="29"/>
+    <line x1="71" y1="71" x2="80" y2="80"/>
+    <line x1="80" y1="20" x2="71" y2="29"/>
+    <line x1="29" y1="71" x2="20" y2="80"/>
+  </g>
+  <!-- Sun body -->
+  <circle cx="50" cy="50" r="22" fill="#f5c842" stroke="#3d2817" stroke-width="3"/>
+  <!-- Sun face -->
+  <circle cx="42" cy="46" r="2.5" fill="#3d2817"/>
+  <circle cx="58" cy="46" r="2.5" fill="#3d2817"/>
+  <path d="M 42 56 Q 50 62 58 56" stroke="#3d2817" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- Cheek blush -->
+  <circle cx="38" cy="52" r="2" fill="#f08a72" opacity="0.6"/>
+  <circle cx="62" cy="52" r="2" fill="#f08a72" opacity="0.6"/>
+</svg>

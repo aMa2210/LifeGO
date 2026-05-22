@@ -1,0 +1,44 @@
+// LifeGO database schema — see PLAN.md §6
+// SQLite stores JSON fields as String; parse in application code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  city          String    @default("Tokyo")
+  seed          String    @default("mia")
+  attributes    String    @default("{}")
+  unlockedSlots String    @default("{}")
+  unlockedEggs  String    @default("[]")
+  personaTitle  String?
+  personaDesc   String?
+  createdAt     DateTime  @default(now())
+  checkins      Checkin[]
+}
+
+model Checkin {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  poiName        String
+  poiCategory    String
+  lat            Float
+  lng            Float
+  weight         Int
+  tags           String   @default("[]")
+  photoUrl       String?
+  note           String?
+  attributeDelta String   @default("{}")
+  isSpecial      Boolean  @default(false)
+  createdAt      DateTime
+
+  @@index([userId, createdAt])
+}

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(Write-Output \"=== D:\\\\LifeGO contents ===\"; cmd /c dir D:\\\\LifeGO; Write-Output \"=== Node check ===\"; $nodePaths = @\\(\"$env:ProgramFiles\\\\nodejs\\\\node.exe\", \"${env:ProgramFiles\\(x86\\)}\\\\nodejs\\\\node.exe\", \"$env:APPDATA\\\\npm\\\\node.exe\", \"$env:LOCALAPPDATA\\\\Programs\\\\node\\\\node.exe\", \"$env:USERPROFILE\\\\AppData\\\\Local\\\\fnm_multishells\"\\); foreach \\($p in $nodePaths\\) { if \\(Test-Path $p\\) { Write-Output \"FOUND: $p\" } }; Write-Output \"=== where.exe node ===\"; cmd /c \"where node 2>&1\"; Write-Output \"=== nvm check ===\"; cmd /c \"where nvm 2>&1\")",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; Set-Location D:\\\\LifeGO; npm install @google/generative-ai mapbox-gl react-map-gl prisma @prisma/client zustand recharts @dicebear/core @dicebear/collection lucide-react clsx tailwind-merge class-variance-authority 2>&1 | Out-String)",
+      "Bash(\"/c/Program Files/nodejs/npx\" tsx -e \"import\\('./lib/fake-user.ts'\\).then\\(m => console.log\\(JSON.stringify\\(m.sanityCheck\\(\\), null, 2\\)\\)\\)\")",
+      "PowerShell(Get-PSDrive -Name D | Select-Object Used, Free, @{n=\"UsedGB\";e={[math]::Round\\($_.Used/1GB, 2\\)}}, @{n=\"FreeGB\";e={[math]::Round\\($_.Free/1GB, 2\\)}}; Write-Output \"---\"; if \\(Test-Path \"D:\\\\LifeGO\\\\mobile\\\\node_modules\"\\) { $size = \\(Get-ChildItem \"D:\\\\LifeGO\\\\mobile\\\\node_modules\" -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum\\).Sum; Write-Output \\(\"mobile/node_modules partial size: {0:N0} bytes \\({1:N2} GB\\)\" -f $size, \\($size/1GB\\)\\) }; $webSize = \\(Get-ChildItem \"D:\\\\LifeGO\\\\node_modules\" -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum\\).Sum; Write-Output \\(\"web node_modules size: {0:N0} bytes \\({1:N2} GB\\)\" -f $webSize, \\($webSize/1GB\\)\\))",
+      "PowerShell($d = Get-PSDrive -Name D; $freeGB = [math]::Round\\($d.Free/1GB, 2\\); Write-Output \"D: free = $freeGB GB\"; if \\($d.Free -gt 3GB\\) { Write-Output \"OK - enough for Expo init\" } else { Write-Output \"STILL TOO LITTLE - need 3+ GB\" })",
+      "Bash(node -e \"const p = require\\('D:/LifeGO/mobile/node_modules/expo-router/package.json'\\); console.log\\(JSON.stringify\\(p.exports, null, 2\\).slice\\(0,1500\\)\\)\")"
+    ]
+  }
+}
