@@ -4,13 +4,24 @@
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
+/** Read API key from EXPO_PUBLIC_* env (mobile build-time inlined). */
+function getApiKey(): string | undefined {
+  return process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+}
+
+/** Lets callers branch to mock-data path without forcing an error. */
+export function hasApiKey(): boolean {
+  const k = getApiKey();
+  return typeof k === "string" && k.length > 0;
+}
+
 let _client: GoogleGenerativeAI | null = null;
 function client(): GoogleGenerativeAI {
   if (_client) return _client;
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error(
-      "GEMINI_API_KEY is not set. Get a free key at https://aistudio.google.com/apikey"
+      "EXPO_PUBLIC_GEMINI_API_KEY is not set. Get a free key at https://aistudio.google.com/apikey"
     );
   }
   _client = new GoogleGenerativeAI(apiKey);

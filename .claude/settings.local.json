@@ -8,7 +8,10 @@
       "Bash(\"/c/Program Files/nodejs/npx\" tsx -e \"import\\('./lib/fake-user.ts'\\).then\\(m => console.log\\(JSON.stringify\\(m.sanityCheck\\(\\), null, 2\\)\\)\\)\")",
       "PowerShell(Get-PSDrive -Name D | Select-Object Used, Free, @{n=\"UsedGB\";e={[math]::Round\\($_.Used/1GB, 2\\)}}, @{n=\"FreeGB\";e={[math]::Round\\($_.Free/1GB, 2\\)}}; Write-Output \"---\"; if \\(Test-Path \"D:\\\\LifeGO\\\\mobile\\\\node_modules\"\\) { $size = \\(Get-ChildItem \"D:\\\\LifeGO\\\\mobile\\\\node_modules\" -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum\\).Sum; Write-Output \\(\"mobile/node_modules partial size: {0:N0} bytes \\({1:N2} GB\\)\" -f $size, \\($size/1GB\\)\\) }; $webSize = \\(Get-ChildItem \"D:\\\\LifeGO\\\\node_modules\" -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum\\).Sum; Write-Output \\(\"web node_modules size: {0:N0} bytes \\({1:N2} GB\\)\" -f $webSize, \\($webSize/1GB\\)\\))",
       "PowerShell($d = Get-PSDrive -Name D; $freeGB = [math]::Round\\($d.Free/1GB, 2\\); Write-Output \"D: free = $freeGB GB\"; if \\($d.Free -gt 3GB\\) { Write-Output \"OK - enough for Expo init\" } else { Write-Output \"STILL TOO LITTLE - need 3+ GB\" })",
-      "Bash(node -e \"const p = require\\('D:/LifeGO/mobile/node_modules/expo-router/package.json'\\); console.log\\(JSON.stringify\\(p.exports, null, 2\\).slice\\(0,1500\\)\\)\")"
+      "Bash(node -e \"const p = require\\('D:/LifeGO/mobile/node_modules/expo-router/package.json'\\); console.log\\(JSON.stringify\\(p.exports, null, 2\\).slice\\(0,1500\\)\\)\")",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

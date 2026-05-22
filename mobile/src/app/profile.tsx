@@ -12,7 +12,14 @@ import { ATTRIBUTE_KEYS, ATTRIBUTE_LABELS } from "@/lib/attributes";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
 
 export default function ProfileScreen() {
-  const { attributes, eggs, checkins, resetToSeed } = useLifeGOStore();
+  const {
+    attributes,
+    eggs,
+    checkins,
+    resetToSeed,
+    playReplay,
+    isReplaying,
+  } = useLifeGOStore();
 
   return (
     <ThemedView style={styles.container}>
@@ -33,7 +40,7 @@ export default function ProfileScreen() {
 
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="small" themeColor="textSecondary">
-              6 轴属性（按 30 天半衰期衰减）
+              6 轴属性（30 天半衰期衰减）
             </ThemedText>
             {ATTRIBUTE_KEYS.map((k) => (
               <View key={k} style={styles.attrRow}>
@@ -80,8 +87,15 @@ export default function ProfileScreen() {
             </ThemedText>
             <ThemedText
               type="link"
-              onPress={resetToSeed}
-              style={styles.actionLink}
+              onPress={isReplaying ? undefined : () => playReplay()}
+              style={[styles.actionLink, isReplaying && styles.disabledLink]}
+            >
+              📽️ 投资人演示 — Replay Mia 的 3 天 (约 11 秒) →
+            </ThemedText>
+            <ThemedText
+              type="link"
+              onPress={isReplaying ? undefined : resetToSeed}
+              style={[styles.actionLink, isReplaying && styles.disabledLink]}
             >
               重置为初始 14 条打卡 →
             </ThemedText>
@@ -126,4 +140,5 @@ const styles = StyleSheet.create({
   eggEmoji: { fontSize: 24, lineHeight: 28 },
   eggBody: { flex: 1, gap: 2 },
   actionLink: { paddingVertical: Spacing.two },
+  disabledLink: { opacity: 0.4 },
 });

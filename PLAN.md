@@ -474,6 +474,52 @@ Web 版（Sprint 0-2）作为**参考实现 + 业务逻辑孵化器**保留在 `
 
 0% 复用（UI 层需重写）：`app/page.tsx` · `components/*.tsx`
 
+### Sprint M4 — Demo replay + EAS Build 配置（2026-05-22）
+
+**核心交付：Replay 功能**
+- Store 新增 `playReplay()` action + `isReplaying` 标志 + `replayProgress` 进度
+- 流程：清空 → 800ms 停顿 → 14 次 checkin 按时间顺序加（每条 550ms，跨天加 1200ms）→ 末尾一次性 fire UnlockToast 显示全部解锁内容
+- 总时长 ~11 秒，跨越 PLAN §10 投资人脚本的 0:20–1:00 倒带段
+- Home 在 `isReplaying` 时把 greeting 换成 "📽️ Day N / 3 · X / 14" 进度条
+- 触发入口：Profile → 开发工具 → "📽️ 投资人演示" 链接
+
+**App 品牌信息**：`app.json` 改成 `LifeGO` / `lifego` / `com.lifego.app`（iOS + Android 同包名），splash 暖米黄 `#fef3c7`，iOS Info.plist 加 `NSLocationWhenInUseUsageDescription`
+
+**EAS Build 配置**：新增 `mobile/eas.json` 三个 profile
+- `development`：dev client，真机分发（用户 iPhone 装这个就能跑 @rnmapbox/maps）
+- `preview`：内部分发 + iOS simulator
+- `production`：自动版本号递增
+
+### EAS Build 用户操作步骤
+
+```bash
+cd D:\LifeGO\mobile
+npx eas login          # 用 Expo 账号登录（免费注册 expo.dev）
+npx eas build:configure # 首次配置 project id（自动写回 app.json）
+npx eas build --profile development --platform ios
+```
+
+第三步等待 ~20-30 分钟云端打包。打包完邮件/网页都会给一个 QR 码。
+
+iPhone 操作：
+1. Safari 打开邮件里的 QR 链接 / Expo dashboard
+2. 点 "Install build" → iOS 提示安装描述文件
+3. 设置 → 通用 → VPN 与设备管理 → 信任开发者证书
+4. 桌面上会出现 LifeGO 图标 → 打开即是 dev client
+
+之后 `npx expo start --dev-client` + iPhone Expo 内打开扫码即可热重载，**和 Expo Go 一样的开发流程，但带原生模块**。
+
+### App Store 截图计划
+
+iPhone 16 Pro 6.9" 截图（1320×2868），3-5 张：
+1. **Home + 完整状态**：Mia 形象 + 🌙🐺 彩蛋徽章 + "✨ 探险家诗人" PersonaCard + "今天做什么 →"按钮
+2. **Map**：东京全屏地图 + 14 个彩色 POI marker + 选中 Blue Bottle 弹出 popup
+3. **打卡 sheet**：在 Map 上点中 teamLab → bottom sheet 滑入 →"✨ 重" 选中 + 标签 + 想法
+4. **Profile + 雷达图**：6 轴雷达 + 隐藏特质详情 + Timeline
+5. **Replay 演示**：Home 上 "📽️ Day 2 / 3" 进度条 + Avatar 半进化状态
+
+直接用真 iPhone 录屏截图（设置 → 通用 → 关于本机改设备名为 "iPhone 16 Pro" 等以符合 Apple 命名要求）。
+
 ---
 
 ## 12. 未来 (V2+，本期不做)

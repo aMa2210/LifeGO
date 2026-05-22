@@ -1,9 +1,20 @@
-import { StyleSheet, ScrollView, View } from "react-native";
+import { useRef } from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Avatar } from "@/components/Avatar";
+import { PersonaCard } from "@/components/PersonaCard";
+import {
+  RecommendDialog,
+  type RecommendDialogHandle,
+} from "@/components/RecommendDialog";
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { useLifeGOStore } from "@/lib/store";
@@ -21,7 +32,9 @@ function greeting(): string {
 }
 
 export default function HomeScreen() {
-  const { attributes, eggs, checkins, seed } = useLifeGOStore();
+  const { attributes, eggs, checkins, seed, isReplaying, replayProgress } =
+    useLifeGOStore();
+  const recommendRef = useRef<RecommendDialogHandle>(null);
 
   return (
     <ThemedView style={styles.container}>
@@ -31,13 +44,24 @@ export default function HomeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <ThemedText type="small" themeColor="textSecondary">
-            {greeting()}
-          </ThemedText>
-          <ThemedText type="title">LifeGO</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {MIA_USER.name} · {MIA_USER.city} · {checkins.length} check-ins
-          </ThemedText>
+          {isReplaying && replayProgress ? (
+            <ThemedView type="backgroundSelected" style={styles.replayBanner}>
+              <ThemedText style={styles.replayText}>
+                📽️ Day {Math.max(1, replayProgress.day)} / 3 · {replayProgress.current}{" "}
+                / {replayProgress.total} check-ins
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            <>
+              <ThemedText type="small" themeColor="textSecondary">
+                {greeting()}
+              </ThemedText>
+              <ThemedText type="title">LifeGO</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {MIA_USER.name} · {MIA_USER.city} · {checkins.length} check-ins
+              </ThemedText>
+            </>
+          )}
 
           <View style={styles.avatarSlot}>
             <Avatar attributes={attributes} eggs={eggs} seed={seed} size={280} />
@@ -52,7 +76,11 @@ export default function HomeScreen() {
               eggs.map((id) => {
                 const e = EASTER_EGG_BY_ID[id];
                 return (
-                  <ThemedView key={id} type="backgroundSelected" style={styles.eggPill}>
+                  <ThemedView
+                    key={id}
+                    type="backgroundSelected"
+                    style={styles.eggPill}
+                  >
                     <ThemedText type="small">
                       {e.emoji} {e.title.zh}
                     </ThemedText>
@@ -62,16 +90,20 @@ export default function HomeScreen() {
             )}
           </View>
 
-          <ThemedView type="backgroundElement" style={styles.personaCard}>
-            <ThemedText type="small" themeColor="textSecondary">
-              人格描述
-            </ThemedText>
-            <ThemedText style={styles.personaText}>
-              ✨ Sprint M3 接 Gemini 后这里会有动态生成的"探险家诗人"长文
-            </ThemedText>
-          </ThemedView>
+          <PersonaCard />
+
+          <TouchableOpacity
+            onPress={() => recommendRef.current?.present()}
+            activeOpacity={0.85}
+            disabled={isReplaying}
+            style={[styles.ctaButton, isReplaying && styles.ctaDisabled]}
+          >
+            <ThemedText style={styles.ctaText}>今天做什么 →</ThemedText>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
+
+      <RecommendDialog ref={recommendRef} />
     </ThemedView>
   );
 }
@@ -86,6 +118,14 @@ const styles = StyleSheet.create({
     paddingBottom: BottomTabInset + Spacing.four,
     gap: Spacing.two,
   },
+  replayBanner: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three,
+    alignItems: "center",
+    marginBottom: Spacing.two,
+  },
+  replayText: { fontWeight: "600" },
   avatarSlot: {
     alignItems: "center",
     paddingVertical: Spacing.three,
@@ -96,16 +136,25 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: Spacing.two,
     marginBottom: Spacing.three,
+    minHeight: 26,
   },
   eggPill: {
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.one,
     borderRadius: 999,
   },
-  personaCard: {
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
-    gap: Spacing.two,
+  ctaButton: {
+    marginTop: Spacing.three,
+    backgroundColor: "#7c3aed",
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    borderRadius: Spacing.three,
+    alignItems: "center",
   },
-  personaText: { lineHeight: 22 },
+  ctaDisabled: { opacity: 0.4 },
+  ctaText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "600",
+  },
 });
