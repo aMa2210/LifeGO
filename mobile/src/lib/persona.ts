@@ -112,11 +112,14 @@ ${recentPOIs}
 为这个用户生成一个「类星座」的人格画像。`;
 
   try {
+    // gemini-2.5-flash chosen over -pro for ~4s latency reduction.
+    // Smoke test (scripts/test-persona.mjs) confirms flash @ temp 0.95
+    // produces equivalently rich + specific Chinese personas.
     const raw = await llm({
       system: SYSTEM_PROMPT,
       user: userPrompt,
-      model: "pro",
-      temperature: 0.85,
+      model: "flash",
+      temperature: 0.95,
       responseSchema: personaSchema,
     });
     const parsed = JSON.parse(raw) as Persona;
