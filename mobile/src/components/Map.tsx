@@ -4,7 +4,7 @@
 // We therefore use `import type` for compile-time types only, and a guarded
 // `require()` at runtime — so Expo Go never touches the native code path.
 
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import Constants from "expo-constants";
 
 import { ThemedText } from "@/components/themed-text";
@@ -15,13 +15,16 @@ import { TOKYO_POIS, type POI, type POICategory } from "@/lib/tokyo-pois";
 import { useT } from "@/lib/i18n";
 
 const TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+const IS_WEB = Platform.OS === "web";
 const IS_EXPO_GO = Constants.appOwnership === "expo";
+// Web has no @rnmapbox/maps support at all; reuse the StaticMap fallback.
+const USE_STATIC_FALLBACK = IS_WEB || IS_EXPO_GO;
 
-// Lazy-load @rnmapbox/maps — only outside Expo Go.
+// Lazy-load @rnmapbox/maps — only on native, outside Expo Go.
 type MapboxModule = typeof import("@rnmapbox/maps");
 let mapboxModule: MapboxModule | null = null;
 
-if (!IS_EXPO_GO) {
+if (!USE_STATIC_FALLBACK) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     mapboxModule = require("@rnmapbox/maps") as MapboxModule;
@@ -69,10 +72,10 @@ export function Map({ onPOIPress }: Props) {
     );
   }
 
-  // Expo Go (or native module not linked) → render the static map fallback.
+  // Web / Expo Go / native module not linked → static map fallback.
   // It's a real Mapbox image with POI markers overlaid via Mercator math,
   // so you get a recognizable Tokyo view + tappable POIs. No pan/zoom though.
-  if (IS_EXPO_GO || !mapboxModule) {
+  if (USE_STATIC_FALLBACK || !mapboxModule) {
     return <StaticMap onPOIPress={onPOIPress} />;
   }
 
