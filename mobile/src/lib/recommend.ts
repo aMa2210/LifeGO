@@ -130,14 +130,21 @@ export async function generateRecommendations({
   attributes,
   checkins,
   locale,
-  city = "Tokyo",
+  user,
 }: {
   persona: Persona;
   attributes: Attributes;
   checkins: StoredCheckin[];
   locale: Locale;
-  city?: string;
+  user?: { name: string; city: string };
 }): Promise<Recommendation[]> {
+  const city = user?.city || "Tokyo";
+  const userNameLine =
+    user?.name
+      ? locale === "en"
+        ? `User: ${user.name}.\n`
+        : `用户：${user.name}。\n`
+      : "";
   if (!hasApiKey()) {
     await new Promise((r) => setTimeout(r, 500));
     return locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH;
@@ -149,7 +156,7 @@ export async function generateRecommendations({
 
   const userPrompt =
     locale === "en"
-      ? `User persona: ${persona.title} (${persona.subtitle})
+      ? `${userNameLine}User persona: ${persona.title} (${persona.subtitle})
 Description: ${persona.description}
 Strength phrases: ${persona.strengths.join(" / ")}
 
@@ -166,7 +173,7 @@ Current time of day: ${timeOfDayEn(hour)} (${hour}:00)
 Places already visited (avoid repeating): ${recentPlaces || "none"}
 
 Recommend 3 specific activity venues (real ${city} places, fresh ones).`
-      : `用户人格: ${persona.title} (${persona.subtitle})
+      : `${userNameLine}用户人格: ${persona.title} (${persona.subtitle})
 人格描述: ${persona.description}
 特质短语: ${persona.strengths.join(" / ")}
 

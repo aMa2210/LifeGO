@@ -52,43 +52,131 @@ const MOCK_PERSONA_EN: Persona = {
   ],
 };
 
-const SYSTEM_PROMPT_ZH = `你是 LifeGO 应用的「人格解读师」—— LifeGO 是一款根据用户行为打卡数据构建 Q 版形象的应用。
+// ── Voice rotation ─────────────────────────────────────────────────────────
+// Each call randomly picks one. Same attribute profile → very different
+// personas depending on which voice draws the card. Breaks the "all my
+// personas sound the same" feeling.
 
-你的任务是根据用户的属性、隐藏特质和打卡历史，写一份「类星座/MBTI 风格」的人格描述。
+type Voice = {
+  id: string;
+  emoji: string;
+  zh: string;
+  en: string;
+};
 
-口吻要求：
-- 像 16personalities 那样有诗意，但带着「懂你的朋友」的温度
-- 避免陈词滥调（不要"善良"、"勇敢"这种空泛词汇）
-- 要具体到一个画面、一个习惯、一种偏好
-- 用中文，但 subtitle 用英文
-- 不要写「你是 INTJ」这种 MBTI 词汇，要原创人格名
+const VOICES: Voice[] = [
+  {
+    id: "cold",
+    emoji: "🌒",
+    zh: "冷峻派 — 像北欧导演的旁白。短句、克制、不解释自己。避免任何抒情形容词。多用动词。",
+    en: "Cold voice — like a Nordic film narrator. Short sentences, restrained, never explains itself. Avoid sentimental adjectives. Use strong verbs.",
+  },
+  {
+    id: "warm",
+    emoji: "☕",
+    zh: "温柔派 — 像深夜电台主持人。柔软、关切、慢节奏。多用「你」「能」「会」这种贴近的称呼。",
+    en: "Warm voice — like a late-night radio host. Soft, concerned, slow-paced. Lots of 'you' as direct address.",
+  },
+  {
+    id: "physical",
+    emoji: "🏃",
+    zh: "硬派 — 像运动员的自传开头。重量感、具体动作、不掉书袋。多用身体词汇（呼吸、肌肉、汗、骨头、节奏）。",
+    en: "Physical voice — like the opening of an athlete's memoir. Weight, concrete motion, no name-dropping. Use body words (breath, muscle, sweat, bone, pace).",
+  },
+  {
+    id: "philosophy",
+    emoji: "🧠",
+    zh: "哲思派 — 像 Wikipedia 的「思想史」条目。把日常行为当现象学切片来谈。冷静、抽象、有一点点学术。",
+    en: "Philosophical voice — like a 'history of ideas' entry. Treat ordinary behavior as phenomenology. Calm, abstract, lightly academic.",
+  },
+  {
+    id: "street",
+    emoji: "🌃",
+    zh: "街头派 — 像凌晨 3 点写作的人写自己。口语、节奏快、有一点点不在乎的酷劲。可以用网络化的简短句子，但不要 cringe。",
+    en: "Street voice — like someone writing themselves at 3 AM. Conversational, fast, a little bit too-cool. Short punchy sentences allowed, but never cringe.",
+  },
+  {
+    id: "fairy",
+    emoji: "🍃",
+    zh: "童话派 — 像绘本旁白。比喻成一种生物或自然元素。轻盈、奇异、不滥用「灵魂」。",
+    en: "Fairytale voice — like picture-book narration. Compare them to a creature or natural element. Light, strange, never overuses 'soul'.",
+  },
+];
 
-字段要求：
-- title: 6-12 个中文字，evocative 的名词短语（例如 "探险家诗人"、"都市游吟者"、"星尘收集者"）
-- subtitle: 英文小标题（例如 "The Wandering Aesthete"）
-- description: 80-120 中文字，2-3 句话，要具体到一个画面或场景
-- strengths: 3-5 个短语，每个 4-8 字（不要"善良"这种空泛的，要"低声细语的好奇"这种具象的）
+// Words the model overproduces — we explicitly forbid them so every persona
+// has to find fresher language. Updated periodically as we spot new clichés.
+const AVOID_WORDS_ZH = [
+  "诗意", "灵魂", "雅集", "品味", "漫步", "低声", "细腻", "独特",
+  "深邃", "捕捉", "瞬间", "风景", "聆听", "氛围", "感受", "细节",
+  "温柔", "敏感", "独立", "文艺",
+];
+const AVOID_WORDS_EN = [
+  "poetic", "soul", "refined", "taste", "gentle", "sensitive", "unique",
+  "contemplative", "glimmer", "weave", "navigate", "embrace", "essence",
+  "tapestry", "journey", "spirit", "depths", "wander", "yearn",
+];
 
-只返回 JSON。`;
+// Few-shot exemplars in three very different styles — gives the model a
+// calibration anchor for "how far you can push voice" without being abstract.
+const FEW_SHOT_ZH = `示例 1（街头派）：
+{"title":"凌晨的便利店学者","subtitle":"The Convenience Store Scholar","description":"你不睡觉时世界更清楚。冰柜的嗡嗡声是你的白噪音。你买一杯黑咖啡能在收银台旁边看完三页书，然后走出去对自己说今天不算白过。","strengths":["对噪音的免疫","凌晨的清醒","对孤独的实用主义"]}
 
-const SYSTEM_PROMPT_EN = `You are the "persona interpreter" for LifeGO — an app that builds a Q-version character from a user's location check-in behavior.
+示例 2（硬派）：
+{"title":"会喘气的字典","subtitle":"The Breathing Dictionary","description":"你每周要让心率到 160 至少两次。这是你处理思绪的方式——跑完才能想清楚。健身房里没人跟你说话也行，地铁里没座位也行，因为你的腿一直比你的脑子诚实。","strengths":["把焦虑跑掉的能力","身体先答应","对早晨的不抗拒"]}
 
-Your task: given a user's attribute axes, hidden traits, and check-in history, write a horoscope-style or MBTI-style personality description IN ENGLISH.
+示例 3（哲思派）：
+{"title":"地点的收藏者","subtitle":"The Cartographer of Places","description":"你对一个地方的判断标准不是"好不好"而是"在这里能不能想清楚事情"。你来回经过的咖啡馆有时候只是椅子的高度对了。这构成了一种私人的城市地理学。","strengths":["对场所的敏感","拒绝随机性","把日常做成研究"]}`;
 
-Voice requirements:
-- Poetic like 16personalities, but with the warmth of a friend who truly sees you.
-- Avoid clichés. NEVER use empty words like "kind", "brave", "creative" without specifics.
-- Anchor every phrase to a concrete scene, habit, or preference.
-- Output ALL fields in English. Do not include Chinese characters anywhere.
-- Do not call the user "INTJ" or any MBTI code — invent an original persona name.
+const FEW_SHOT_EN = `Example 1 (street voice):
+{"title":"The Late-Night Convenience Store Scholar","subtitle":"Reads Books Under Buzzing Fridges","description":"You see things clearer when you don't sleep. The fridge hum is your white noise. Three pages of a book next to the register and one black coffee — you walk out telling yourself the day counted.","strengths":["Immunity to noise","Sharp at 2 AM","Practical about being alone"]}
+
+Example 2 (physical voice):
+{"title":"The Breathing Dictionary","subtitle":"Thinks With Her Lungs","description":"Twice a week the heart rate hits 160 and that's how you process thought. The gym doesn't need conversation. The subway doesn't need a seat. Your legs are more honest than your head, and that's been working out.","strengths":["Runs the anxiety off","Body says yes first","Doesn't fight the morning"]}
+
+Example 3 (philosophical voice):
+{"title":"The Cartographer of Places","subtitle":"Maps Cities By Where Thinking Happens","description":"You don't judge a place by 'good' or 'bad' — only by whether you can finish a thought there. Some cafés you return to just because the chairs are the right height. It adds up to a private urban geography.","strengths":["Sensitive to settings","Refuses randomness","Treats daily life as research"]}`;
+
+function buildSystemPrompt(locale: Locale, voice: Voice): string {
+  if (locale === "en") {
+    return `You are the "persona interpreter" for LifeGO — an app that builds a Q-version character from a user's check-in behavior. Write a horoscope-style personality IN ENGLISH.
+
+THIS CALL'S VOICE — strict, do not blend with others:
+${voice.en}
 
 Field requirements:
-- title: Evocative English noun phrase, 2-4 words (e.g. "The Wandering Aesthete", "The Urban Glimmer Collector", "The Midnight Cartographer").
-- subtitle: A short tag-line in English (e.g. "Poet of Urban Margins").
-- description: 2-3 sentences in English, 50-90 words, painting a specific scene or habit.
-- strengths: 3-5 short English phrases, each 3-6 words (no clichés like "kind" — use "Quiet, observing curiosity" instead).
+- title: 2-4 word English noun phrase. Concrete, specific. Avoid "The Wandering ___" template if possible.
+- subtitle: A short English tag-line (5-10 words). Can be a sentence fragment.
+- description: 2-3 sentences in English, 50-90 words. Anchor to specific actions or moments from the user's data, not abstract qualities.
+- strengths: 3-5 short English phrases, each 3-6 words. NO generic virtues like "kind"/"creative"/"brave".
 
-Return JSON only.`;
+FORBIDDEN WORDS (the model overuses these — pick fresher language):
+${AVOID_WORDS_EN.join(", ")}
+
+Few-shot examples spanning very different voices (do NOT copy — match the LEVEL of specificity):
+${FEW_SHOT_EN}
+
+Return JSON only. Do not include Chinese characters anywhere.`;
+  }
+
+  return `你是 LifeGO 应用的「人格解读师」—— LifeGO 是一款根据用户行为打卡数据构建 Q 版形象的应用。请用中文写一份「类星座」的人格描述。
+
+本次调用的声音 —— 严格遵循，不要混入其他风格：
+${voice.zh}
+
+字段要求：
+- title: 6-12 个中文字。具体、有画面感。避免用「漫游者 / 诗人 / 聆听者」这种被用烂的模板。
+- subtitle: 英文小标题，5-10 词。可以是 sentence fragment。
+- description: 80-120 中文字，2-3 句话。要锚定到用户数据里的具体行为或时段，不要泛泛的形容词。
+- strengths: 3-5 个短语，每个 4-8 字。绝对不要「善良」「勇敢」「敏感」这种空泛德性词。
+
+禁用词（这些模型用得过度，请换更新鲜的表达）：
+${AVOID_WORDS_ZH.join("、")}
+
+下面是三种风格差异极大的范例（不要照抄——参考它们的"具体程度"）：
+${FEW_SHOT_ZH}
+
+只返回 JSON。`;
+}
 
 export async function generatePersona({
   attributes,
@@ -96,12 +184,14 @@ export async function generatePersona({
   eggs,
   checkins,
   locale,
+  user,
 }: {
   attributes: Attributes;
   attributesPeak: Attributes;
   eggs: EasterEggId[];
   checkins: StoredCheckin[];
   locale: Locale;
+  user?: { name: string; city: string };
 }): Promise<Persona> {
   if (!hasApiKey()) {
     await new Promise((r) => setTimeout(r, 400));
@@ -116,9 +206,17 @@ export async function generatePersona({
     )
     .join("\n");
 
+  // User identity preamble — empty string when called from pre-onboarding paths.
+  const identityEn = user?.name
+    ? `User: ${user.name}${user.city ? `, based in ${user.city}` : ""}.\n\n`
+    : "";
+  const identityZh = user?.name
+    ? `用户：${user.name}${user.city ? `，所在${user.city}` : ""}。\n\n`
+    : "";
+
   const userPrompt =
     locale === "en"
-      ? `User attribute profile:
+      ? `${identityEn}User attribute profile:
 
 Current state (30-day decay applied):
 - Explorer: ${attributes.explorer}
@@ -142,7 +240,7 @@ Last 10 check-ins:
 ${recentPOIs}
 
 Write a horoscope-style persona for this user.`
-      : `用户的属性画像：
+      : `${identityZh}用户的属性画像：
 
 当前状态（30天衰减后）:
 - 探索: ${attributes.explorer}
@@ -167,12 +265,18 @@ ${recentPOIs}
 
 为这个用户生成一个「类星座」的人格画像。`;
 
+  // Pick a random voice for this generation. Cached persona will freeze
+  // this voice until next regenerate (new check-ins / locale switch /
+  // long-press refresh) — so the variety surfaces over time, not within
+  // a single read.
+  const voice = VOICES[Math.floor(Math.random() * VOICES.length)];
+
   try {
     const raw = await llm({
-      system: locale === "en" ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH,
+      system: buildSystemPrompt(locale, voice),
       user: userPrompt,
       model: "flash",
-      temperature: 0.95,
+      temperature: 1.2,
       responseSchema: personaSchema,
     });
     const parsed = JSON.parse(raw) as Persona;

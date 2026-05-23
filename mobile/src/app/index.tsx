@@ -21,7 +21,6 @@ import {
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { useLifeGOStore } from "@/lib/store";
-import { MIA_USER } from "@/lib/fake-user";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
 import { useT, type StringKey } from "@/lib/i18n";
 
@@ -40,7 +39,7 @@ export default function HomeScreen() {
     attributes,
     eggs,
     checkins,
-    seed,
+    user,
     isReplaying,
     replayProgress,
     locale,
@@ -48,6 +47,8 @@ export default function HomeScreen() {
   const recommendRef = useRef<RecommendDialogHandle>(null);
   const insets = useSafeAreaInsets();
   const t = useT();
+
+  const isFirstRun = checkins.length === 0;
 
   return (
     <ThemedView style={styles.container}>
@@ -77,8 +78,10 @@ export default function HomeScreen() {
               </ThemedText>
               <ThemedText type="title">LifeGO</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {MIA_USER.name} · {MIA_USER.city} · {checkins.length}{" "}
-                {t("home.checkins")}
+                {user.name}
+                {user.city ? ` · ${user.city}` : ""}
+                {" · "}
+                {checkins.length} {t("home.checkins")}
               </ThemedText>
             </>
           )}
@@ -87,10 +90,25 @@ export default function HomeScreen() {
             <Avatar
               attributes={attributes}
               eggs={eggs}
-              seed={seed}
+              seed={user.seed || "mia"}
               size={280}
             />
           </View>
+
+          {isFirstRun && !isReplaying && (
+            <ThemedView type="backgroundElement" style={styles.emptyCard}>
+              <ThemedText style={styles.emptyTitle}>
+                {t("home.empty.title")}
+              </ThemedText>
+              <ThemedText
+                type="small"
+                themeColor="textSecondary"
+                style={styles.emptyDesc}
+              >
+                {t("home.empty.desc")}
+              </ThemedText>
+            </ThemedView>
+          )}
 
           <View style={styles.eggsRow}>
             {eggs.length === 0 ? (
@@ -181,4 +199,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  emptyCard: {
+    padding: Spacing.four,
+    borderRadius: Spacing.four,
+    marginTop: Spacing.two,
+    gap: Spacing.one,
+  },
+  emptyTitle: { fontSize: 17, fontWeight: "600" },
+  emptyDesc: { lineHeight: 20 },
 });

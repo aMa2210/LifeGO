@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, TouchableOpacity, View } from "react-native";
+import { Alert, Platform, StyleSheet, ScrollView, TouchableOpacity, View } from "react-native";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -7,31 +7,50 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { AttributeRadar } from "@/components/AttributeRadar";
-import { Timeline } from "@/components/Timeline";
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { useLifeGOStore } from "@/lib/store";
 import { ATTRIBUTE_KEYS, ATTRIBUTE_LABELS } from "@/lib/attributes";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
 import { useT, translate, type Locale } from "@/lib/i18n";
-import { MIA_USER } from "@/lib/fake-user";
 
 const LANG_OPTIONS: { value: Locale; label: string }[] = [
   { value: "zh", label: "中文" },
   { value: "en", label: "English" },
 ];
 
+// Cross-platform confirm. Native uses Alert.alert (2-button), web uses
+// window.confirm (sync). Both call onConfirm only if the user agrees.
+function confirmAction(message: string, onConfirm: () => void) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.confirm(message)) {
+      onConfirm();
+    }
+  } else {
+    Alert.alert("", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "OK", style: "destructive", onPress: onConfirm },
+    ]);
+  }
+}
+
 export default function ProfileScreen() {
   const {
     attributes,
     eggs,
     checkins,
-    resetToSeed,
+    user,
     playReplay,
     isReplaying,
     locale,
     setLocale,
+    loadMiaSample,
+    restoreFromMia,
+    snapshotBeforeMia,
+    clearCheckins,
+    resetUser,
   } = useLifeGOStore();
+  const inMiaMode = !!snapshotBeforeMia;
   const insets = useSafeAreaInsets();
   const t = useT();
 
@@ -49,8 +68,8 @@ export default function ProfileScreen() {
           <ThemedText type="title">{t("profile.title")}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {t("profile.subtitle", {
-              name: MIA_USER.name,
-              city: MIA_USER.city,
+              name: user.name || "—",
+              city: user.city || "—",
               n: checkins.length,
             })}
           </ThemedText>
@@ -105,13 +124,6 @@ export default function ProfileScreen() {
             )}
           </ThemedView>
 
-          <ThemedView type="backgroundElement" style={styles.card}>
-            <ThemedText type="small" themeColor="textSecondary">
-              {t("profile.timelineHeader")}
-            </ThemedText>
-            <Timeline checkins={checkins} limit={10} />
-          </ThemedView>
-
           {/* Language toggle */}
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="small" themeColor="textSecondary">
@@ -154,12 +166,60 @@ export default function ProfileScreen() {
             >
               {t("profile.replayAction")}
             </ThemedText>
+            {inMiaMode ? (
+              <ThemedText
+                type="link"
+                onPress={
+                  isReplaying
+                    ? undefined
+                    : () =>
+                        confirmAction(
+                          t("profile.restoreFromMiaConfirm"),
+                          restoreFromMia
+                        )
+                }
+                style={[styles.actionLink, isReplaying && styles.disabledLink]}
+              >
+                {t("profile.restoreFromMia", {
+                  name: snapshotBeforeMia?.user.name || "—",
+                })}
+              </ThemedText>
+            ) : (
+              <ThemedText
+                type="link"
+                onPress={
+                  isReplaying
+                    ? undefined
+                    : () =>
+                        confirmAction(t("profile.loadSampleConfirm"), loadMiaSample)
+                }
+                style={[styles.actionLink, isReplaying && styles.disabledLink]}
+              >
+                {t("profile.loadSample")}
+              </ThemedText>
+            )}
             <ThemedText
               type="link"
-              onPress={isReplaying ? undefined : resetToSeed}
+              onPress={
+                isReplaying
+                  ? undefined
+                  : () =>
+                      confirmAction(t("profile.clearCheckinsConfirm"), clearCheckins)
+              }
               style={[styles.actionLink, isReplaying && styles.disabledLink]}
             >
-              {t("profile.resetAction")}
+              {t("profile.clearCheckins")}
+            </ThemedText>
+            <ThemedText
+              type="link"
+              onPress={
+                isReplaying
+                  ? undefined
+                  : () => confirmAction(t("profile.resetUserConfirm"), resetUser)
+              }
+              style={[styles.actionLink, isReplaying && styles.disabledLink]}
+            >
+              {t("profile.resetUser")}
             </ThemedText>
           </ThemedView>
         </ScrollView>
