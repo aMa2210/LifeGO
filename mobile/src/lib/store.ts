@@ -76,6 +76,14 @@ type LifeGOState = {
 
   /** Discrete pre-baked character visual state. See lib/character.ts. */
   character: CharacterState;
+  /** Every CharacterVisual the user has been displayed as, in chronological
+   *  order, deduped. The current visual is always the last entry (when not
+   *  "in-development"). Drives the archive 3-state (active/fading/sleeping):
+   *   - active   = character.visual
+   *   - fading   = in history, but not active
+   *   - sleeping = never appeared in history
+   *  "in-development" placeholders are excluded — they're not real visuals. */
+  visualHistory: ResolvedVisual[];
   /** Queued visual-change events to surface via UnlockToast. */
   pendingVisualEvents: VisualChangeEvent[];
 
@@ -183,6 +191,18 @@ function nextCharacter(
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** Append a visual to history if it's real (not "in-development") and not
+ *  already present. Returns the same array reference when no change, so
+ *  Zustand selectors can rely on identity equality. */
+function addToVisualHistory(
+  history: ResolvedVisual[],
+  v: ResolvedVisual
+): ResolvedVisual[] {
+  if (v === "in-development") return history;
+  if (history.includes(v)) return history;
+  return [...history, v];
+}
+
 function seedFromInitialAvatarEdit(summary: InitialAvatarEditSummary): string {
   return `${miaData.user.seed}-${summary.archetypeId}-${summary.toneId}`;
 }
@@ -236,6 +256,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
   recentlyUnlockedEggs: [],
 
   character: initialChar.next,
+  visualHistory: addToVisualHistory([], initialChar.next.visual),
   pendingVisualEvents: [],
   dialogLog: [],
 
@@ -279,6 +300,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       eggs: r.eggs,
       recentlyUnlockedEggs: newEggs,
       character: nextChar,
+      visualHistory: addToVisualHistory(prev.visualHistory, nextChar.visual),
       pendingVisualEvents: event
         ? [...prev.pendingVisualEvents, event]
         : prev.pendingVisualEvents,
@@ -340,6 +362,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       eggs: r.eggs,
       recentlyUnlockedEggs: [],
       character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
       pendingVisualEvents: [],
       dialogLog: [],
       q1SnapshotAttrs: r.attributes,
@@ -428,6 +451,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       eggs: [],
       recentlyUnlockedEggs: [],
       character: emptyChar,
+      visualHistory: addToVisualHistory([], emptyChar.visual),
       pendingVisualEvents: [],
       dialogLog: [],
       // Snapshot the bottom of the replay so deltas grow as checkins play.
@@ -460,6 +484,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
           attributesPeak: r.attributesPeak,
           eggs: r.eggs,
           character: char,
+          visualHistory: addToVisualHistory(state.visualHistory, char.visual),
         };
       });
 
@@ -509,6 +534,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       attributesPeak: r.attributesPeak,
       eggs: r.eggs,
       character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
       pendingVisualEvents: event ? [event] : [],
       initialAvatarEditUsed: true,
       initialAvatarEditSummary: profile,

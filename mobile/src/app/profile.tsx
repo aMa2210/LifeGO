@@ -105,7 +105,7 @@ const TREND_ROWS: Record<"week" | "month", TrendRow[]> = {
   ],
 };
 
-type AchievementStatus = "active" | "sleeping";
+type AchievementStatus = "active" | "fading" | "sleeping";
 
 type Achievement = {
   id: string;
@@ -124,16 +124,26 @@ const VISUAL_DETAIL_KEY: Record<CharacterVisual, StringKey> = {
   "outfit-social": "character.archive.socialDetail",
 };
 
-/** Build the achievement archive: every visual exists as a slot; the user's
- *  CURRENT visual is "active", the other 5 are "sleeping". Eggs do NOT appear
- *  here — they live in the Hidden Traits card. */
-function archiveFromVisual(currentVisual: ResolvedVisual): Achievement[] {
+/** Build the achievement archive: every visual exists as a slot, classified by
+ *  visualHistory:
+ *    active  = currently displayed visual
+ *    fading  = previously displayed at some point, but not current anymore
+ *    sleeping = never displayed
+ *  Eggs do NOT appear here — they live in the Hidden Traits card. */
+function archiveFromVisual(
+  currentVisual: ResolvedVisual,
+  visualHistory: ResolvedVisual[]
+): Achievement[] {
+  const seen = new Set(visualHistory);
   return ALL_VISUALS.map((v) => {
     const meta = VISUAL_META[v];
-    const isActive = currentVisual === v;
+    let status: AchievementStatus;
+    if (currentVisual === v) status = "active";
+    else if (seen.has(v)) status = "fading";
+    else status = "sleeping";
     return {
       id: `visual-${v}`,
-      status: isActive ? ("active" as const) : ("sleeping" as const),
+      status,
       icon: meta.emoji,
       titleKey: meta.titleKey,
       detailKey: VISUAL_DETAIL_KEY[v],
@@ -188,6 +198,7 @@ export default function ProfileScreen() {
     locale,
     setLocale,
     character,
+    visualHistory,
   } = useLifeGOStore();
   const insets = useSafeAreaInsets();
   const t = useT();
@@ -199,8 +210,8 @@ export default function ProfileScreen() {
     useState<AchievementStatus>("active");
 
   const achievements = useMemo(
-    () => archiveFromVisual(character.visual),
-    [character.visual]
+    () => archiveFromVisual(character.visual, visualHistory),
+    [character.visual, visualHistory]
   );
   const hiddenTraits = useMemo(() => hiddenTraitsFromEggs(eggs), [eggs]);
 
@@ -287,9 +298,10 @@ export default function ProfileScreen() {
                   {t("profile.achievements.title")}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {t("profile.achievements.summarySimple", {
+                  {t("profile.achievements.summary", {
                     active: achievements.filter((v) => v.status === "active").length,
-                    total: achievements.length,
+                    fading: achievements.filter((v) => v.status === "fading").length,
+                    sleeping: achievements.filter((v) => v.status === "sleeping").length,
                   })}
                 </ThemedText>
               </View>
@@ -314,6 +326,7 @@ export default function ProfileScreen() {
                   style={[
                     styles.archivePreviewCard,
                     item.status === "active" && styles.archivePreviewActive,
+                    item.status === "fading" && styles.archivePreviewFading,
                     item.status === "sleeping" && styles.archivePreviewSleeping,
                   ]}
                 >
@@ -328,9 +341,7 @@ export default function ProfileScreen() {
                     themeColor="textSecondary"
                     numberOfLines={2}
                   >
-                    {item.status === "active"
-                      ? t("profile.achievements.active")
-                      : t("profile.achievements.sleeping")}
+                    {t(`profile.achievements.${item.status}` as StringKey)}
                   </ThemedText>
                 </ThemedView>
               ))}
@@ -424,7 +435,7 @@ function ArchiveModal({
       title={t("profile.achievements.title")}
     >
       <View style={styles.segmentRow}>
-        {(["active", "sleeping"] as const).map((status) => (
+        {(["active", "fading", "sleeping"] as const).map((status) => (
           <TouchableOpacity
             key={status}
             onPress={() => setArchiveFilter(status)}
@@ -449,6 +460,7 @@ function ArchiveModal({
             type="backgroundSelected"
             style={[
               styles.archiveItem,
+              item.status === "fading" && styles.fadingItem,
               item.status === "sleeping" && styles.sleepingItem,
             ]}
           >
@@ -699,8 +711,13 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#7c3aed",
   },
+  archivePreviewFading: {
+    opacity: 0.7,
+    borderWidth: 1.5,
+    borderColor: "rgba(124,58,237,0.25)",
+  },
   archivePreviewSleeping: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   archivePreviewIcon: { fontSize: 28, lineHeight: 34 },
   // ── Trend rows (under growth-ring video) ───────────────────────────
@@ -797,6 +814,11 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.three,
     padding: Spacing.three,
     gap: Spacing.one,
+  },
+  fadingItem: {
+    opacity: 0.72,
+    borderWidth: 1.5,
+    borderColor: "rgba(124,58,237,0.25)",
   },
   sleepingItem: {
     opacity: 0.55,
