@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useT } from "@/lib/i18n";
+import { useLifeGOStore } from "@/lib/store";
 import type { POI } from "@/lib/tokyo-pois";
 
 const TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
@@ -47,6 +48,7 @@ type Props = {
 
 export function SearchBar({ onSelect }: Props) {
   const t = useT();
+  const cityCoords = useLifeGOStore((s) => s.user.cityCoords);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -71,13 +73,17 @@ export function SearchBar({ onSelect }: Props) {
       setLoading(true);
       setError(null);
 
+      // Bias search toward the user's resolved city center (or Tokyo as a
+      // fallback) so "Starbucks" returns local hits, not random global ones.
+      const proximity = cityCoords
+        ? `${cityCoords.lng},${cityCoords.lat}`
+        : "139.715,35.668";
       const url =
         `https://api.mapbox.com/search/geocode/v6/forward?` +
         `q=${encodeURIComponent(query.trim())}` +
         `&access_token=${TOKEN}` +
         `&limit=5` +
-        // Bias toward Tokyo since that's the demo city. Remove for global.
-        `&proximity=139.715,35.668`;
+        `&proximity=${proximity}`;
 
       fetch(url, { signal: ctrl.signal })
         .then((r) => r.json())
@@ -111,7 +117,7 @@ export function SearchBar({ onSelect }: Props) {
     }, 350);
 
     return () => clearTimeout(handle);
-  }, [query, t]);
+  }, [query, t, cityCoords]);
 
   if (!TOKEN) return null;
 

@@ -44,6 +44,44 @@ export type StoredCheckin = {
   attributeDelta: AttributeDelta;
 };
 
+/**
+ * Min real check-ins before Gemini-generated persona is shown. Gate keeps
+ * the persona honest — below this, the LLM has only Q1 prefill to work
+ * with and will happily invent personality on thin air.
+ */
+export const PERSONA_MIN_CHECKINS = 3;
+
+export type User = {
+  name: string;
+  /** Free-text city; "" means user skipped. Used in persona / recommend prompts. */
+  city: string;
+  /**
+   * Lazily-resolved center (Mapbox forward geocoding of `city`). Null until
+   * Map.web.tsx runs the lookup; cached here so a page reload doesn't re-fetch.
+   * Wired by `setUserCityCoords`.
+   */
+  cityCoords: { lng: number; lat: number } | null;
+  /** DiceBear seed — stable across sessions. */
+  seed: string;
+  hasOnboarded: boolean;
+};
+
+const EMPTY_USER: User = {
+  name: "",
+  city: "",
+  cityCoords: null,
+  seed: "",
+  hasOnboarded: false,
+};
+
+const MIA_USER: User = {
+  name: miaData.user.name,
+  city: miaData.user.city,
+  cityCoords: { lng: 139.715, lat: 35.668 }, // Tokyo — Mia's home city
+  seed: miaData.user.seed,
+  hasOnboarded: true,
+};
+
 export type ReplayProgress = {
   current: number; // 1-based index into checkins
   total: number;
@@ -66,6 +104,24 @@ export type VisualChangeEvent = {
 };
 
 type LifeGOState = {
+  user: User;
+  /**
+   * Snapshot saved when the user loads Mia's sample so they can return to
+   * their own identity + check-ins afterwards. Null when no Mia load is
+   * active (or after they've switched back).
+   */
+  snapshotBeforeMia: {
+    user: User;
+    checkins: StoredCheckin[];
+    character: CharacterState;
+    visualHistory: ResolvedVisual[];
+    initialAvatarEditUsed: boolean;
+    initialAvatarEditSummary: InitialAvatarEditSummary | null;
+    initialAttributes: Attributes;
+    q1SnapshotAttrs: Attributes;
+    feedbackVoiceStyle: FeedbackVoiceStyle | null;
+  } | null;
+
   checkins: StoredCheckin[];
   seed: string;
   /** Current displayed strength — decayed sum (recency-weighted) + initial baseline. */
@@ -123,6 +179,13 @@ type LifeGOState = {
    */
   q1SnapshotAttrs: Attributes;
   feedbackVoiceStyle: FeedbackVoiceStyle | null;
+
+  /**
+   * True once persistence rehydrate completes. Persistence itself is not
+   * wired in this merge (deferred follow-up) — default `true` so consumers
+   * don't block on a flag that never flips.
+   */
+  _hydrated: boolean;
 };
 
 type LifeGOActions = {
@@ -137,6 +200,24 @@ type LifeGOActions = {
   applyInitialAvatarEdit: (
     summary: InitialAvatarEditSummary | LegacyInitialAvatarEditSummary
   ) => void;
+
+  // ── Real-user mode + Mia sample switch ───────────────────────────────
+  /** Complete onboarding: write user info + optional 6D prefill boost. */
+  completeOnboarding: (input: {
+    name: string;
+    city: string;
+    prefillAttrs?: Attributes;
+  }) => void;
+  /** Cache geocoded city center so we don't re-fetch on every Map mount. */
+  setUserCityCoords: (coords: { lng: number; lat: number } | null) => void;
+  /** Wipe everything (user identity + check-ins + character) back to onboarding. */
+  resetUser: () => void;
+  /** Wipe check-ins but keep user identity. */
+  clearCheckins: () => void;
+  /** Snapshot current state, then load Mia's 14-checkin sample (reversible). */
+  loadMiaSample: () => void;
+  /** Restore the user state saved by loadMiaSample(). No-op if no snapshot. */
+  restoreFromMia: () => void;
 };
 
 type LifeGOStore = LifeGOState & LifeGOActions;
@@ -253,6 +334,12 @@ const initialChar = nextCharacter(
 
 // ── Store ─────────────────────────────────────────────────────────────────
 export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
+  // Default boot: Mia's identity + her 14-checkin trajectory (so the demo
+  // looks right on first launch). Real onboarding (boot to EMPTY_USER then
+  // gate on hasOnboarded) is a follow-up — needs persistence first.
+  user: MIA_USER,
+  snapshotBeforeMia: null,
+  _hydrated: true,
   checkins: initialCheckins,
   seed: miaData.user.seed,
   attributes: initial.attributes,
@@ -570,6 +657,198 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       personaError: null,
       recommendations: null,
       recommendationsError: null,
+    });
+  },
+
+  // ── Real-user mode + Mia sample switch ────────────────────────────────
+  completeOnboarding: ({ name, city, prefillAttrs }) => {
+    const seed = `${name || "anon"}-${Date.now().toString(36)}`;
+    // Optional 6D prefill from onboarding questions becomes the user's
+    // initial baseline — adds a starting "shape" so the avatar isn't featureless.
+    const initialAttrs = prefillAttrs
+      ? { ...prefillAttrs }
+      : { ...EMPTY_INITIAL_ATTRIBUTES };
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      initialAttrs,
+      initialAttrs,
+      null
+    );
+    set({
+      user: { name, city, cityCoords: null, seed, hasOnboarded: true },
+      snapshotBeforeMia: null,
+      checkins: [],
+      seed,
+      attributes: initialAttrs,
+      attributesPeak: initialAttrs,
+      eggs: [],
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: false,
+      initialAvatarEditSummary: null,
+      initialAttributes: initialAttrs,
+      q1SnapshotAttrs: initialAttrs,
+      feedbackVoiceStyle: null,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+    });
+  },
+
+  setUserCityCoords: (coords) => {
+    set((state) => ({ user: { ...state.user, cityCoords: coords } }));
+  },
+
+  resetUser: () => {
+    const emptyAttrs = { ...EMPTY_INITIAL_ATTRIBUTES };
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      emptyAttrs,
+      emptyAttrs,
+      null
+    );
+    set({
+      user: EMPTY_USER,
+      snapshotBeforeMia: null,
+      checkins: [],
+      seed: "",
+      attributes: emptyAttrs,
+      attributesPeak: emptyAttrs,
+      eggs: [],
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: false,
+      initialAvatarEditSummary: null,
+      initialAttributes: emptyAttrs,
+      q1SnapshotAttrs: emptyAttrs,
+      feedbackVoiceStyle: null,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+
+  clearCheckins: () => {
+    const prev = get();
+    const emptyAttrs = { ...prev.initialAttributes };
+    const archetypeId = prev.initialAvatarEditSummary?.archetypeId ?? null;
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      emptyAttrs,
+      emptyAttrs,
+      archetypeId
+    );
+    set({
+      checkins: [],
+      attributes: emptyAttrs,
+      attributesPeak: emptyAttrs,
+      eggs: [],
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      q1SnapshotAttrs: emptyAttrs,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+
+  loadMiaSample: () => {
+    const prev = get();
+    const snapshot: typeof prev.snapshotBeforeMia = {
+      user: prev.user,
+      checkins: prev.checkins,
+      character: prev.character,
+      visualHistory: prev.visualHistory,
+      initialAvatarEditUsed: prev.initialAvatarEditUsed,
+      initialAvatarEditSummary: prev.initialAvatarEditSummary,
+      initialAttributes: prev.initialAttributes,
+      q1SnapshotAttrs: prev.q1SnapshotAttrs,
+      feedbackVoiceStyle: prev.feedbackVoiceStyle,
+    };
+    const r = recompute(initialCheckins);
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      r.attributes,
+      r.attributes,
+      null
+    );
+    set({
+      user: MIA_USER,
+      snapshotBeforeMia: snapshot,
+      checkins: initialCheckins,
+      seed: miaData.user.seed,
+      attributes: r.attributes,
+      attributesPeak: r.attributesPeak,
+      eggs: r.eggs,
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: false,
+      initialAvatarEditSummary: null,
+      initialAttributes: { ...EMPTY_INITIAL_ATTRIBUTES },
+      q1SnapshotAttrs: r.attributes,
+      feedbackVoiceStyle: null,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+
+  restoreFromMia: () => {
+    const prev = get();
+    if (!prev.snapshotBeforeMia) return;
+    const snap = prev.snapshotBeforeMia;
+    const r = recompute(snap.checkins, snap.initialAttributes);
+    set({
+      user: snap.user,
+      snapshotBeforeMia: null,
+      checkins: snap.checkins,
+      seed: snap.user.seed,
+      attributes: r.attributes,
+      attributesPeak: r.attributesPeak,
+      eggs: r.eggs,
+      recentlyUnlockedEggs: [],
+      character: snap.character,
+      visualHistory: snap.visualHistory,
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: snap.initialAvatarEditUsed,
+      initialAvatarEditSummary: snap.initialAvatarEditSummary,
+      initialAttributes: snap.initialAttributes,
+      q1SnapshotAttrs: snap.q1SnapshotAttrs,
+      feedbackVoiceStyle: snap.feedbackVoiceStyle,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
     });
   },
 }));

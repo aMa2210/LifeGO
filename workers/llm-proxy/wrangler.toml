@@ -1,0 +1,10 @@
+name = "lifego-llm-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+# Public env vars (visible in dashboard). Override per-environment if needed.
+# GEMINI_API_KEY is NOT here — set it via `wrangler secret put GEMINI_API_KEY`.
+[vars]
+# Comma-separated allowed origins. Set "*" only for dev. Production: list your
+# real domains, e.g. "https://lifego.app,https://www.lifego.app".
+ALLOWED_ORIGINS = "*"

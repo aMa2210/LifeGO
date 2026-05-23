@@ -135,8 +135,11 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
     }
   }, []);
 
-  if (!poi) return null;
-
+  // BottomSheetModal must stay mounted at all times so sheetRef.current is
+  // valid the first time present() is called. Previously we returned null
+  // when poi was null, which meant the first present() call from SearchBar
+  // hit a null ref and silently no-op'd. Keep the modal mounted; just guard
+  // the inner content.
   return (
     <BottomSheetModal
       ref={sheetRef}
@@ -146,6 +149,8 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
       handleIndicatorStyle={{ backgroundColor: theme.textSecondary }}
     >
       <BottomSheetView style={styles.content}>
+        {!poi ? null : (
+          <>
         <ThemedText type="subtitle">
           {poi.name}
           {poi.isRare && " ⭐"}
@@ -173,6 +178,11 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
                     t(`attr.${k}` as StringKey)
                   )
                   .join(" · ");
+                // Highlight whichever category this POI most recently used.
+                // For first-ever check-ins on a search result, poi.category
+                // is the placeholder "cafe" — that placeholder gets highlighted
+                // which is fine (user can still tap any other cell).
+                const isCurrent = poi.category === category;
                 return (
                   <TouchableOpacity
                     key={category}
@@ -180,13 +190,22 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
                     style={[
                       styles.pickerCell,
                       {
-                        borderColor: theme.backgroundSelected,
-                        backgroundColor: theme.backgroundElement,
+                        borderColor: isCurrent
+                          ? "#7c3aed"
+                          : theme.backgroundSelected,
+                        backgroundColor: isCurrent
+                          ? "rgba(124, 58, 237, 0.12)"
+                          : theme.backgroundElement,
                       },
                     ]}
                   >
                     <ThemedText style={styles.pickerEmoji}>{emoji}</ThemedText>
-                    <ThemedText style={styles.pickerLabel}>
+                    <ThemedText
+                      style={[
+                        styles.pickerLabel,
+                        isCurrent && { color: "#7c3aed", fontWeight: "600" },
+                      ]}
+                    >
                       {t(`poiCategory.${category}` as StringKey)}
                     </ThemedText>
                     <ThemedText
@@ -328,6 +347,8 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
                 </ThemedText>
               </TouchableOpacity>
             </View>
+          </>
+        )}
           </>
         )}
       </BottomSheetView>

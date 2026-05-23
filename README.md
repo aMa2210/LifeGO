@@ -29,6 +29,7 @@ Native parity is preserved — iOS/Android paths are untouched by web work.
 | `app/`, `components/`, `lib/`, `prisma/` (repo root) | Original Next.js 16 web reference implementation. **Frozen.** Kept as a "how was this solved on web" lookup, not for new feature work. |
 | `PLAN.md` | Canonical product + technical truth. Sprint history, demo script, tech-stack rationale, gotcha catalog. **Read §11.5 before touching mobile.** |
 | `mobile/AGENTS.md` | Mobile conventions: i18n rule, native-module guard pattern, `.web.tsx` sibling pattern, dev workflow. |
+| `workers/llm-proxy/` | Cloudflare Worker that proxies Gemini calls so the API key stays server-side. See its `README.md` for deploy steps. |
 
 ## Running the mobile app in a browser (preferred dev loop)
 

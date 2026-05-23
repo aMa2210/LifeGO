@@ -51,6 +51,14 @@ export const STRINGS = {
   },
   "persona.errorTitle": { zh: "人格生成失败", en: "Persona generation failed" },
   "persona.retry": { zh: "重试 →", en: "Retry →" },
+  "persona.locked": {
+    zh: "✨ 再打 {n} 次卡，AI 就能识别你的轮廓",
+    en: "✨ {n} more check-in(s) and I'll start to recognize you",
+  },
+  "persona.lockedHint": {
+    zh: "现在还只是「你说自己喜欢什么」，需要真实行为才能下结论。",
+    en: "Right now it's just \"what you say you like\" — needs real behavior to draw conclusions.",
+  },
 
   // ── RecommendDialog ────────────────────────────────────────────────────
   "recommend.dialogTitle.default": {
@@ -382,6 +390,12 @@ export const STRINGS = {
     zh: "+ {n} 条更早的打卡",
     en: "+ {n} earlier check-ins",
   },
+  "timeline.openButton": { zh: "📜 打卡记录", en: "📜 Check-ins" },
+  "timeline.dialogTitle": { zh: "打卡记录", en: "Check-ins" },
+  "timeline.dialogSubtitle": {
+    zh: "共 {n} 次",
+    en: "{n} total",
+  },
 
   // ── UnlockToast ────────────────────────────────────────────────────────
   "unlock.newContent": { zh: "🎉 解锁新内容", en: "🎉 New unlock" },
@@ -419,6 +433,104 @@ export const STRINGS = {
     en: "Solitude is how you recharge.",
   },
 
+  // ── Onboarding (first-run) ─────────────────────────────────────────────
+  "onboarding.welcome": {
+    zh: "你好，欢迎来到 LifeGO",
+    en: "Hi, welcome to LifeGO",
+  },
+  "onboarding.subtitle": {
+    zh: "用打卡发现你自己。先认识一下吧。",
+    en: "Discover yourself through check-ins. First, let's get to know each other.",
+  },
+  "onboarding.nameLabel": { zh: "你叫什么？", en: "What should I call you?" },
+  "onboarding.namePlaceholder": { zh: "昵称", en: "Your name" },
+  "onboarding.cityLabel": {
+    zh: "你在哪个城市？（可选）",
+    en: "What city are you in? (optional)",
+  },
+  "onboarding.cityPlaceholder": {
+    zh: "例如：东京、上海、纽约",
+    en: "e.g. Tokyo, Shanghai, New York",
+  },
+  "onboarding.cityHint": {
+    zh: "用于推荐附近的地点。留空也行。",
+    en: "Used to suggest nearby places. You can skip.",
+  },
+  "onboarding.preferenceLabel": {
+    zh: "你最想做什么？",
+    en: "What do you most want to do?",
+  },
+  "onboarding.preferenceHint": {
+    zh: "最多选 {max} 个。给你的人物形象一个起点。",
+    en: "Pick up to {max}. Gives your avatar a starting form.",
+  },
+  "onboarding.submit": { zh: "开始 →", en: "Get started →" },
+
+  "preference.athletic":   { zh: "总在动",       en: "Always moving" },
+  "preference.cafe":       { zh: "慢生活探店",   en: "Slow café crawls" },
+  "preference.art":        { zh: "艺术与灵感",   en: "Art & inspiration" },
+  "preference.productive": { zh: "专注与精进",   en: "Focus & deep work" },
+  "preference.social":     { zh: "朋友与热闹",   en: "Friends & buzz" },
+  "preference.nocturnal":  { zh: "都市夜行人",   en: "City night-walker" },
+  "preference.earlybird":  { zh: "早晨派",       en: "Early riser" },
+
+  // ── Empty / first-run states ───────────────────────────────────────────
+  "home.empty.title": {
+    zh: "新的一天，新的开始",
+    en: "A new day, a new beginning",
+  },
+  "home.empty.desc": {
+    zh: "去地图打第一张卡，看看你会成长成什么样子。",
+    en: "Make your first check-in on the map — see who you'll grow into.",
+  },
+  "map.empty.banner": {
+    zh: "搜索一个地点开始你的第一次打卡。",
+    en: "Search a place to make your first check-in.",
+  },
+  "map.subtitleEmpty": {
+    zh: "{city} · 还没有打卡的地方 · 在上面搜一个吧",
+    en: "{city} · No places yet · search above",
+  },
+  "map.subtitleWithCheckins": {
+    zh: "{city} · {n} 个去过的地方 · 点 marker 再打一次",
+    en: "{city} · {n} places visited · tap a marker to re-check-in",
+  },
+  "profile.empty.title": { zh: "时间轴还是空的", en: "Your timeline is empty" },
+
+  // ── Profile data-management actions ────────────────────────────────────
+  "profile.loadSample": {
+    zh: "📽️ 加载 Mia 示例数据",
+    en: "📽️ Load Mia sample data",
+  },
+  "profile.loadSampleConfirm": {
+    zh: "会切换到 Mia 示例。你当前的身份会被保存，可以再切回来。",
+    en: "Switches to the Mia sample. Your current identity is saved and you can switch back.",
+  },
+  "profile.restoreFromMia": {
+    zh: "👤 返回到 {name}（清除 Mia 示例）",
+    en: "👤 Switch back to {name} (clear Mia sample)",
+  },
+  "profile.restoreFromMiaConfirm": {
+    zh: "返回到你自己的身份，Mia 示例的打卡会被丢弃。",
+    en: "Switch back to your own identity; the Mia sample check-ins will be discarded.",
+  },
+  "profile.clearCheckins": {
+    zh: "清空我的打卡（保留身份）",
+    en: "Clear my check-ins (keep identity)",
+  },
+  "profile.clearCheckinsConfirm": {
+    zh: "清空所有打卡？身份信息和初始喜好会保留。",
+    en: "Clear all check-ins? Your identity and starting preferences are kept.",
+  },
+  "profile.resetUser": {
+    zh: "完全重置（回到 onboarding）",
+    en: "Full reset (back to onboarding)",
+  },
+  "profile.resetUserConfirm": {
+    zh: "完全重置后会回到 onboarding，所有数据丢失。",
+    en: "Full reset returns to onboarding; all data lost.",
+  },
+
   // ── SearchBar (web-only ad-hoc check-in search) ────────────────────────
   "search.placeholder": {
     zh: "搜索地点（如 Starbucks Shibuya）",
@@ -447,6 +559,64 @@ export const STRINGS = {
   "poiCategory.walk":       { zh: "散步地",     en: "Walk" },
   "poiCategory.livehouse":  { zh: "Live house", en: "Livehouse" },
   "poiCategory.market":     { zh: "市集",       en: "Market" },
+
+  // ── Element card (含混指标 — dominant attribute → element) ──────────────
+  "element.header": { zh: "你的元素", en: "Your element" },
+  "element.unformed": {
+    zh: "还未显形——再打卡试试",
+    en: "Not yet visible — try a few check-ins",
+  },
+  "element.explorer.name": { zh: "风", en: "Wind" },
+  "element.explorer.desc": {
+    zh: "不被一个地方留住的人。",
+    en: "Not the kind to be held by one place.",
+  },
+  "element.social.name": { zh: "火", en: "Fire" },
+  "element.social.desc": {
+    zh: "聚起来的时候世界才完整。",
+    en: "The world's only whole when there are others in it.",
+  },
+  "element.athletic.name": { zh: "山", en: "Mountain" },
+  "element.athletic.desc": {
+    zh: "靠重复站稳。",
+    en: "Stands by repetition.",
+  },
+  "element.foodie.name": { zh: "水", en: "Water" },
+  "element.foodie.desc": {
+    zh: "汇聚味道与饱满。",
+    en: "Gathers flavor and fullness.",
+  },
+  "element.aesthete.name": { zh: "月", en: "Moon" },
+  "element.aesthete.desc": {
+    zh: "在不被看见的时候最清醒。",
+    en: "Sharpest when no one's watching.",
+  },
+  "element.productive.name": { zh: "日", en: "Sun" },
+  "element.productive.desc": {
+    zh: "把模糊的事情烧成清晰。",
+    en: "Burns the foggy into sharp.",
+  },
+
+  // ── Growth stage card ──────────────────────────────────────────────────
+  "stage.header": { zh: "成长阶段", en: "Growth stage" },
+  "stage.remaining": {
+    zh: "再 {n} 次抵达「{next}」",
+    en: "{n} more to reach {next}",
+  },
+  "stage.final": {
+    zh: "已经走到最后一程——继续就是。",
+    en: "You've reached the last stage — keep going anyway.",
+  },
+  "stage.seed.name":   { zh: "种子",   en: "Seed" },
+  "stage.seed.desc":   { zh: "你刚开始留下痕迹。",        en: "Just starting to leave a mark." },
+  "stage.sprout.name": { zh: "萌芽",   en: "Sprout" },
+  "stage.sprout.desc": { zh: "形状开始有了方向。",        en: "A shape begins to lean somewhere." },
+  "stage.branch.name": { zh: "抽枝",   en: "Branching" },
+  "stage.branch.desc": { zh: "你的偏好藏不住了。",        en: "Your preferences are getting hard to hide." },
+  "stage.bloom.name":  { zh: "开花",   en: "Bloom" },
+  "stage.bloom.desc":  { zh: "你的样子已经被认出来。",    en: "You've become recognizable as yourself." },
+  "stage.fruit.name":  { zh: "结果",   en: "Fruit" },
+  "stage.fruit.desc":  { zh: "你的轨迹自己说话。",        en: "Your trajectory speaks for itself." },
 
   // ── Attribute labels (mirror lib/attributes.ts) ────────────────────────
   "attr.explorer": { zh: "探索", en: "Explorer" },

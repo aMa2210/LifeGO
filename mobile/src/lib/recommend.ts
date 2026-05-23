@@ -1,7 +1,5 @@
 // Activity recommendations via Gemini 2.5-flash. Locale-aware (zh / en).
 
-import { SchemaType } from "@google/generative-ai";
-
 import { llm, hasApiKey } from "./llm";
 import type { Persona } from "./persona";
 import type { Attributes } from "./attributes";
@@ -21,17 +19,17 @@ export type Recommendation = {
 };
 
 const recommendSchema = {
-  type: SchemaType.OBJECT,
+  type: "object",
   properties: {
     items: {
-      type: SchemaType.ARRAY,
+      type: "array",
       items: {
-        type: SchemaType.OBJECT,
+        type: "object",
         properties: {
-          place: { type: SchemaType.STRING },
-          area: { type: SchemaType.STRING },
-          category: { type: SchemaType.STRING },
-          why: { type: SchemaType.STRING },
+          place: { type: "string" },
+          area: { type: "string" },
+          category: { type: "string" },
+          why: { type: "string" },
         },
         required: ["place", "area", "category", "why"],
       },
@@ -164,20 +162,21 @@ export async function generateRecommendations({
   attributes,
   checkins,
   locale,
-  city = "Tokyo",
   voiceStyle,
   visual,
+  user,
 }: {
   persona: Persona;
   attributes: Attributes;
   checkins: StoredCheckin[];
   locale: Locale;
-  city?: string;
   voiceStyle?: FeedbackVoiceStyle | null;
   visual?: ResolvedVisual;
+  user?: { name: string; city: string };
 }): Promise<Recommendation[]> {
   // ── Visual-pinned recommendations (3 per visual). Home character ↔
-  //     persona text ↔ "今天做什么" recs all stay in lockstep.
+  //     persona text ↔ "今天做什么" recs stay in lockstep. Pinned table
+  //     wins over LLM when we have a known visual.
   if (visual && visual !== "in-development") {
     return applyRecommendationVoice(
       localizeRecommendations(visual, locale),
@@ -186,6 +185,13 @@ export async function generateRecommendations({
     );
   }
 
+  const city = user?.city || "Tokyo";
+  const userNameLine =
+    user?.name
+      ? locale === "en"
+        ? `User: ${user.name}.\n`
+        : `用户：${user.name}。\n`
+      : "";
   if (!hasApiKey()) {
     await new Promise((r) => setTimeout(r, 500));
     return applyRecommendationVoice(
@@ -201,7 +207,7 @@ export async function generateRecommendations({
 
   const userPrompt =
     locale === "en"
-      ? `User persona: ${persona.title} (${persona.subtitle})
+      ? `${userNameLine}User persona: ${persona.title} (${persona.subtitle})
 Description: ${persona.description}
 Strength phrases: ${persona.strengths.join(" / ")}
 
@@ -218,7 +224,7 @@ Current time of day: ${timeOfDayEn(hour)} (${hour}:00)
 Places already visited (avoid repeating): ${recentPlaces || "none"}
 
 Recommend 3 specific activity venues (real ${city} places, fresh ones).`
-      : `用户人格: ${persona.title} (${persona.subtitle})
+      : `${userNameLine}用户人格: ${persona.title} (${persona.subtitle})
 人格描述: ${persona.description}
 特质短语: ${persona.strengths.join(" / ")}
 

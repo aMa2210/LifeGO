@@ -7,7 +7,7 @@
 // build. This uses plain DOM (<div>, <button>) rather than React Native
 // primitives — that's fine because this file is web-only.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Map as MapboxMap,
   Marker,
@@ -17,6 +17,7 @@ import {
 import "mapbox-gl/dist/mapbox-gl.css";
 
 import { TOKYO_POIS, type POI, type POICategory } from "@/lib/tokyo-pois";
+import miaData from "@/data/mia-trajectory.json";
 import { useLifeGOStore } from "@/lib/store";
 
 const TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
@@ -42,24 +43,65 @@ type Props = {
   onPOIPress?: (poi: POI) => void;
 };
 
+// Tokyo fallback used when the user skipped city or geocoding hasn't finished.
+const DEFAULT_CENTER = { lng: 139.715, lat: 35.668, zoom: 11.2 };
+
 export function Map({ onPOIPress }: Props) {
   const [selected, setSelected] = useState<POI | null>(null);
   const checkins = useLifeGOStore((s) => s.checkins);
+  const user = useLifeGOStore((s) => s.user);
+  const setUserCityCoords = useLifeGOStore((s) => s.setUserCityCoords);
+  // The 14 curated Tokyo POIs are part of Mia's demo trajectory. Real users
+  // see only the places they search up themselves — keeps the map honest
+  // to "your life", not "this app's preset opinions".
+  const showPresetPOIs = user.seed === miaData.user.seed;
+
+  // Resolve user.city → coords once on mount (cached in store afterwards).
+  // We use Mapbox forward geocoding; if it fails or city is blank, we fall
+  // back to Tokyo so the map at least renders something recognizable.
+  useEffect(() => {
+    if (user.cityCoords) return; // Already cached
+    const q = user.city.trim();
+    if (!q || !TOKEN) return;
+    const ctrl = new AbortController();
+    const url =
+      `https://api.mapbox.com/search/geocode/v6/forward?` +
+      `q=${encodeURIComponent(q)}` +
+      `&access_token=${TOKEN}` +
+      `&limit=1` +
+      `&types=place,locality,region`;
+    fetch(url, { signal: ctrl.signal })
+      .then((r) => r.json())
+      .then((data: { features?: Array<{ properties: { coordinates: { longitude: number; latitude: number } } }> }) => {
+        const c = data.features?.[0]?.properties.coordinates;
+        if (c) setUserCityCoords({ lng: c.longitude, lat: c.latitude });
+      })
+      .catch(() => {
+        // Geocoding failed — leave cityCoords null, fall back to Tokyo center.
+      });
+    return () => ctrl.abort();
+  }, [user.city, user.cityCoords, setUserCityCoords]);
+
+  const center = user.cityCoords
+    ? { ...user.cityCoords, zoom: 11.2 }
+    : DEFAULT_CENTER;
 
   // Ad-hoc POIs (from search) aren't in TOKYO_POIS — they only live inside
-  // the user's check-in history. Pull them out, dedupe by id, and render
-  // them with a distinct purple marker so the user sees their own footprint.
+  // the user's check-in history. Pull them out, dedupe by id keeping the
+  // MOST RECENT check-in's poi snapshot (so when the user re-checks-in via
+  // the marker, the picker pre-highlights the last-used category — see
+  // CheckinSheet's pickCategory mode).
   const adhocPOIs = useMemo(() => {
     const presetIds = new Set(TOKYO_POIS.map((p) => p.id));
-    const seen = new Set<string>();
-    const out: POI[] = [];
+    // NOTE: our exported component is also called `Map`, which shadows the
+    // global Map constructor in this file's scope — `new Map()` here would
+    // try to instantiate the React component. Use globalThis.Map explicitly.
+    const latestById = new globalThis.Map<string, POI>();
     for (const c of checkins) {
       if (presetIds.has(c.poi.id)) continue;
-      if (seen.has(c.poi.id)) continue;
-      seen.add(c.poi.id);
-      out.push(c.poi);
+      latestById.set(c.poi.id, c.poi); // last write wins → most recent
     }
-    return out;
+    return Array.from(latestById.values());
   }, [checkins]);
 
   if (!TOKEN) {
@@ -93,18 +135,22 @@ export function Map({ onPOIPress }: Props) {
       }}
     >
       <MapboxMap
+        // `key` forces a fresh map instance when the resolved center changes
+        // (initialViewState is only read on mount; without re-keying, the map
+        // would stay on Tokyo even after geocoding lands).
+        key={`${center.lng},${center.lat}`}
         mapboxAccessToken={TOKEN}
         initialViewState={{
-          longitude: 139.715,
-          latitude: 35.668,
-          zoom: 11.2,
+          longitude: center.lng,
+          latitude: center.lat,
+          zoom: center.zoom,
         }}
         style={{ width: "100%", height: "100%" }}
         mapStyle="mapbox://styles/mapbox/light-v11"
       >
         <NavigationControl position="top-right" />
 
-        {TOKYO_POIS.map((poi) => (
+        {showPresetPOIs && TOKYO_POIS.map((poi) => (
           <Marker
             key={poi.id}
             longitude={poi.lng}

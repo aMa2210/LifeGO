@@ -1,6 +1,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  Alert,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -16,7 +18,6 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
-import { MIA_USER } from "@/lib/fake-user";
 import type { AttributeKey, Attributes } from "@/lib/attributes";
 import {
   OUTFITS,
@@ -35,6 +36,21 @@ const LANG_OPTIONS: { value: Locale; label: string }[] = [
   { value: "zh", label: "中文" },
   { value: "en", label: "English" },
 ];
+
+/** Cross-platform confirm. Native uses Alert.alert (2-button); web uses
+ *  window.confirm (sync). Both call onConfirm only if the user agrees. */
+function confirmAction(message: string, onConfirm: () => void) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.confirm(message)) {
+      onConfirm();
+    }
+  } else {
+    Alert.alert("", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "OK", style: "destructive", onPress: onConfirm },
+    ]);
+  }
+}
 
 type TrendDirection = "up" | "down" | "steady";
 
@@ -203,7 +219,6 @@ export default function ProfileScreen() {
   const {
     checkins,
     eggs,
-    resetToSeed,
     playReplay,
     isReplaying,
     locale,
@@ -212,7 +227,14 @@ export default function ProfileScreen() {
     visualHistory,
     attributes,
     q1SnapshotAttrs,
+    user,
+    snapshotBeforeMia,
+    loadMiaSample,
+    restoreFromMia,
+    clearCheckins,
+    resetUser,
   } = useLifeGOStore();
+  const inMiaMode = !!snapshotBeforeMia;
   const insets = useSafeAreaInsets();
   const t = useT();
 
@@ -243,8 +265,8 @@ export default function ProfileScreen() {
               <ThemedText type="title">{t("profile.title")}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
                 {t("profile.subtitle", {
-                  name: MIA_USER.name,
-                  city: MIA_USER.city,
+                  name: user.name || "—",
+                  city: user.city || "—",
                   n: checkins.length,
                 })}
               </ThemedText>
@@ -416,7 +438,12 @@ export default function ProfileScreen() {
         setLocale={setLocale}
         isReplaying={isReplaying}
         playReplay={playReplay}
-        resetToSeed={resetToSeed}
+        inMiaMode={inMiaMode}
+        snapshotUserName={snapshotBeforeMia?.user.name ?? null}
+        loadMiaSample={loadMiaSample}
+        restoreFromMia={restoreFromMia}
+        clearCheckins={clearCheckins}
+        resetUser={resetUser}
       />
     </ThemedView>
   );
@@ -504,7 +531,12 @@ function SettingsModal({
   setLocale,
   isReplaying,
   playReplay,
-  resetToSeed,
+  inMiaMode,
+  snapshotUserName,
+  loadMiaSample,
+  restoreFromMia,
+  clearCheckins,
+  resetUser,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -512,7 +544,12 @@ function SettingsModal({
   setLocale: (locale: Locale) => void;
   isReplaying: boolean;
   playReplay: () => Promise<void>;
-  resetToSeed: () => void;
+  inMiaMode: boolean;
+  snapshotUserName: string | null;
+  loadMiaSample: () => void;
+  restoreFromMia: () => void;
+  clearCheckins: () => void;
+  resetUser: () => void;
 }) {
   const t = useT();
   return (
@@ -567,12 +604,58 @@ function SettingsModal({
       >
         {t("profile.replayAction")}
       </ThemedText>
+      {inMiaMode ? (
+        <ThemedText
+          type="link"
+          onPress={
+            isReplaying
+              ? undefined
+              : () =>
+                  confirmAction(
+                    t("profile.restoreFromMiaConfirm"),
+                    restoreFromMia
+                  )
+          }
+          style={[styles.actionLink, isReplaying && styles.disabledLink]}
+        >
+          {t("profile.restoreFromMia", { name: snapshotUserName ?? "—" })}
+        </ThemedText>
+      ) : (
+        <ThemedText
+          type="link"
+          onPress={
+            isReplaying
+              ? undefined
+              : () =>
+                  confirmAction(t("profile.loadSampleConfirm"), loadMiaSample)
+          }
+          style={[styles.actionLink, isReplaying && styles.disabledLink]}
+        >
+          {t("profile.loadSample")}
+        </ThemedText>
+      )}
       <ThemedText
         type="link"
-        onPress={isReplaying ? undefined : resetToSeed}
+        onPress={
+          isReplaying
+            ? undefined
+            : () =>
+                confirmAction(t("profile.clearCheckinsConfirm"), clearCheckins)
+        }
         style={[styles.actionLink, isReplaying && styles.disabledLink]}
       >
-        {t("profile.resetAction")}
+        {t("profile.clearCheckins")}
+      </ThemedText>
+      <ThemedText
+        type="link"
+        onPress={
+          isReplaying
+            ? undefined
+            : () => confirmAction(t("profile.resetUserConfirm"), resetUser)
+        }
+        style={[styles.actionLink, isReplaying && styles.disabledLink]}
+      >
+        {t("profile.resetUser")}
       </ThemedText>
     </DetailModal>
   );

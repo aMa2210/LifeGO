@@ -1,31 +1,20 @@
 // LLM abstraction layer.
-// Current provider: Google Gemini. To swap to Claude, replace the body of `llm()`
-// and bump dependencies — public interface stays stable.
+//
+// Calls Gemini via the LifeGO LLM proxy (Cloudflare Worker). The proxy holds
+// the API key as a server-side secret, so the key never lands in the client
+// bundle. Set `EXPO_PUBLIC_LLM_PROXY_URL` to your deployed Worker URL.
+//
+// To swap providers, replace the body of `llm()` and bump the deps —
+// the LLMRequest / LLMResponse contract stays stable.
 
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-
-/** Read API key from EXPO_PUBLIC_* env (mobile build-time inlined). */
-function getApiKey(): string | undefined {
-  return process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+function getProxyUrl(): string | undefined {
+  return process.env.EXPO_PUBLIC_LLM_PROXY_URL;
 }
 
 /** Lets callers branch to mock-data path without forcing an error. */
 export function hasApiKey(): boolean {
-  const k = getApiKey();
-  return typeof k === "string" && k.length > 0;
-}
-
-let _client: GoogleGenerativeAI | null = null;
-function client(): GoogleGenerativeAI {
-  if (_client) return _client;
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error(
-      "EXPO_PUBLIC_GEMINI_API_KEY is not set. Get a free key at https://aistudio.google.com/apikey"
-    );
-  }
-  _client = new GoogleGenerativeAI(apiKey);
-  return _client;
+  const u = getProxyUrl();
+  return typeof u === "string" && u.length > 0;
 }
 
 export type LLMTier = "flash" | "pro";
@@ -37,40 +26,40 @@ export type LLMRequest = {
   user: string;
   /** flash = cheap+fast (gemini-2.5-flash), pro = creative (gemini-2.5-pro). */
   model?: LLMTier;
-  /** Sampling temperature, 0–1. */
+  /** Sampling temperature, 0–2 (Gemini accepts up to 2). */
   temperature?: number;
   /** OpenAPI-style schema for structured JSON output (Gemini responseSchema). */
   responseSchema?: object;
 };
 
-// Loosen safety filters so persona prose ("midnight soul", "solo") doesn't get blocked.
-const RELAXED_SAFETY = [
-  HarmCategory.HARM_CATEGORY_HARASSMENT,
-  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-].map((category) => ({ category, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH }));
-
-function modelName(tier: LLMTier): string {
-  return tier === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash";
-}
-
 export async function llm(req: LLMRequest): Promise<string> {
-  const tier = req.model ?? "flash";
-  const m = client().getGenerativeModel({
-    model: modelName(tier),
-    systemInstruction: req.system,
-    safetySettings: RELAXED_SAFETY,
-    generationConfig: {
+  const proxyUrl = getProxyUrl();
+  if (!proxyUrl) {
+    throw new Error(
+      "EXPO_PUBLIC_LLM_PROXY_URL is not set. Deploy the worker in workers/llm-proxy/ and put its URL in mobile/.env."
+    );
+  }
+
+  const r = await fetch(proxyUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system: req.system,
+      user: req.user,
+      model: req.model ?? "flash",
       temperature: req.temperature ?? 0.7,
-      ...(req.responseSchema && {
-        responseMimeType: "application/json",
-        responseSchema: req.responseSchema as never,
-      }),
-    },
+      responseSchema: req.responseSchema,
+    }),
   });
-  const result = await m.generateContent(req.user);
-  return result.response.text();
+
+  if (!r.ok) {
+    const errBody = await r.text();
+    throw new Error(`LLM proxy ${r.status}: ${errBody}`);
+  }
+
+  const data = (await r.json()) as { text?: string; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.text ?? "";
 }
 
 export async function llmJson<T>(req: LLMRequest): Promise<T> {
