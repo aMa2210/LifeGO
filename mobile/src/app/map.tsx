@@ -8,6 +8,7 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Map } from "@/components/Map";
+import { SearchBar } from "@/components/SearchBar";
 import {
   CheckinSheet,
   type CheckinSheetHandle,
@@ -25,6 +26,12 @@ export default function MapScreen() {
     sheetRef.current?.present(poi);
   };
 
+  const handleSearchSelect = (poi: POI) => {
+    // Ad-hoc POI from search has a placeholder category; CheckinSheet's
+    // pick-category step overwrites it before any delta math runs.
+    sheetRef.current?.present(poi, { pickCategory: true });
+  };
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
@@ -33,6 +40,10 @@ export default function MapScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             {t("map.subtitle", { n: TOKYO_POIS.length })}
           </ThemedText>
+        </View>
+
+        <View style={styles.searchWrap}>
+          <SearchBar onSelect={handleSearchSelect} />
         </View>
 
         <View
@@ -58,9 +69,18 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.three,
     gap: Spacing.one,
   },
+  searchWrap: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
+    // Keep the search dropdown above the mapbox canvas (web). Mapbox's
+    // canvas owns its own stacking context, so we need a strictly higher
+    // zIndex on the search parent + position to make it count.
+    zIndex: 100,
+    position: "relative",
+  },
   mapWrap: {
     flex: 1,
     paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
+    paddingTop: Spacing.two,
   },
 });

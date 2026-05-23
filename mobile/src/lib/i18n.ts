@@ -186,6 +186,35 @@ export const STRINGS = {
     en: "Solitude is how you recharge.",
   },
 
+  // ── SearchBar (web-only ad-hoc check-in search) ────────────────────────
+  "search.placeholder": {
+    zh: "搜索地点（如 Starbucks Shibuya）",
+    en: "Search a place (e.g. Starbucks Shibuya)",
+  },
+  "search.loading": { zh: "搜索中……", en: "Searching..." },
+  "search.empty": { zh: "没有匹配结果", en: "No matches" },
+  "search.error": { zh: "搜索失败", en: "Search failed" },
+
+  // ── CheckinSheet category picker (for ad-hoc POIs) ─────────────────────
+  "pickCategory.header": {
+    zh: "这是个什么样的地方？",
+    en: "What kind of place is this?",
+  },
+  "poiCategory.cafe":       { zh: "独立咖啡",   en: "Cafe" },
+  "poiCategory.chain-cafe": { zh: "连锁咖啡",   en: "Chain café" },
+  "poiCategory.park":       { zh: "公园",       en: "Park" },
+  "poiCategory.art":        { zh: "艺术馆",     en: "Art" },
+  "poiCategory.restaurant": { zh: "餐厅",       en: "Restaurant" },
+  "poiCategory.bar":        { zh: "酒吧",       en: "Bar" },
+  "poiCategory.running":    { zh: "跑步路线",   en: "Running" },
+  "poiCategory.coworking":  { zh: "联合办公",   en: "Coworking" },
+  "poiCategory.bookstore":  { zh: "书店",       en: "Bookstore" },
+  "poiCategory.gym":        { zh: "健身房",     en: "Gym" },
+  "poiCategory.library":    { zh: "图书馆",     en: "Library" },
+  "poiCategory.walk":       { zh: "散步地",     en: "Walk" },
+  "poiCategory.livehouse":  { zh: "Live house", en: "Livehouse" },
+  "poiCategory.market":     { zh: "市集",       en: "Market" },
+
   // ── Attribute labels (mirror lib/attributes.ts) ────────────────────────
   "attr.explorer": { zh: "探索", en: "Explorer" },
   "attr.social": { zh: "社交", en: "Social" },

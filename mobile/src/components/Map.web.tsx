@@ -7,7 +7,7 @@
 // build. This uses plain DOM (<div>, <button>) rather than React Native
 // primitives — that's fine because this file is web-only.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Map as MapboxMap,
   Marker,
@@ -17,6 +17,7 @@ import {
 import "mapbox-gl/dist/mapbox-gl.css";
 
 import { TOKYO_POIS, type POI, type POICategory } from "@/lib/tokyo-pois";
+import { useLifeGOStore } from "@/lib/store";
 
 const TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
 
@@ -43,6 +44,23 @@ type Props = {
 
 export function Map({ onPOIPress }: Props) {
   const [selected, setSelected] = useState<POI | null>(null);
+  const checkins = useLifeGOStore((s) => s.checkins);
+
+  // Ad-hoc POIs (from search) aren't in TOKYO_POIS — they only live inside
+  // the user's check-in history. Pull them out, dedupe by id, and render
+  // them with a distinct purple marker so the user sees their own footprint.
+  const adhocPOIs = useMemo(() => {
+    const presetIds = new Set(TOKYO_POIS.map((p) => p.id));
+    const seen = new Set<string>();
+    const out: POI[] = [];
+    for (const c of checkins) {
+      if (presetIds.has(c.poi.id)) continue;
+      if (seen.has(c.poi.id)) continue;
+      seen.add(c.poi.id);
+      out.push(c.poi);
+    }
+    return out;
+  }, [checkins]);
 
   if (!TOKEN) {
     return (
@@ -133,6 +151,48 @@ export function Map({ onPOIPress }: Props) {
                   borderRadius: 8,
                   background: CATEGORY_COLORS[poi.category] ?? "#888",
                   boxShadow: "0 0 0 2px #fff, 0 2px 6px rgba(0,0,0,0.18)",
+                }}
+              />
+            </button>
+          </Marker>
+        ))}
+
+        {adhocPOIs.map((poi) => (
+          <Marker
+            key={poi.id}
+            longitude={poi.lng}
+            latitude={poi.lat}
+            anchor="center"
+            onClick={(e) => {
+              e.originalEvent.stopPropagation();
+              if (onPOIPress) onPOIPress(poi);
+            }}
+          >
+            <button
+              type="button"
+              aria-label={poi.name}
+              title={`${poi.name} (你打过的地方)`}
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              <span
+                style={{
+                  position: "relative",
+                  display: "block",
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  background: "#7c3aed",
+                  boxShadow:
+                    "0 0 0 3px #fff, 0 0 0 5px rgba(124,58,237,0.35), 0 2px 6px rgba(0,0,0,0.2)",
                 }}
               />
             </button>

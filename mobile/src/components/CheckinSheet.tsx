@@ -22,17 +22,37 @@ import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useLifeGOStore } from "@/lib/store";
 import {
+  CATEGORY_DELTA,
   computeCheckinDelta,
   computeWeightFromContent,
   type POI,
+  type POICategory,
 } from "@/lib/tokyo-pois";
-import { useT } from "@/lib/i18n";
+import { useT, type StringKey } from "@/lib/i18n";
 
 export type CheckinSheetHandle = {
-  present: (poi: POI) => void;
+  present: (poi: POI, opts?: { pickCategory?: boolean }) => void;
 };
 
-type Mode = "choose" | "share";
+type Mode = "pick-category" | "choose" | "share";
+
+// 14 categories shown in the picker. Emoji + i18n key per category.
+const PICKER_ITEMS: { category: POICategory; emoji: string }[] = [
+  { category: "cafe",         emoji: "☕" },
+  { category: "chain-cafe",   emoji: "🏢" },
+  { category: "park",         emoji: "🌳" },
+  { category: "art",          emoji: "🎨" },
+  { category: "restaurant",   emoji: "🍜" },
+  { category: "bar",          emoji: "🍻" },
+  { category: "running",      emoji: "🏃" },
+  { category: "coworking",    emoji: "💻" },
+  { category: "bookstore",    emoji: "📚" },
+  { category: "gym",          emoji: "💪" },
+  { category: "library",      emoji: "📖" },
+  { category: "walk",         emoji: "🚶" },
+  { category: "livehouse",    emoji: "🎤" },
+  { category: "market",       emoji: "🥕" },
+];
 
 export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet(
   _,
@@ -46,19 +66,28 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
   const addCheckin = useLifeGOStore((s) => s.addCheckin);
   const theme = useTheme();
   const t = useT();
-  const snapPoints = useMemo(() => ["66%"], []);
+  const snapPoints = useMemo(() => ["66%", "85%"], []);
 
   useImperativeHandle(
     ref,
     () => ({
-      present: (p) => {
+      present: (p, opts) => {
         setPoi(p);
-        setMode("choose");
+        setMode(opts?.pickCategory ? "pick-category" : "choose");
         setNote("");
         setPhotoUri(null);
         sheetRef.current?.present();
       },
     }),
+    []
+  );
+
+  const onPickCategory = useCallback(
+    (category: POICategory) => {
+      setPoi((prev) => (prev ? { ...prev, category } : prev));
+      setMode("choose");
+      Haptics.selectionAsync();
+    },
     []
   );
 
@@ -112,6 +141,7 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
     <BottomSheetModal
       ref={sheetRef}
       snapPoints={snapPoints}
+      index={mode === "pick-category" ? 1 : 0}
       backgroundStyle={{ backgroundColor: theme.background }}
       handleIndicatorStyle={{ backgroundColor: theme.textSecondary }}
     >
@@ -121,10 +151,57 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
           {poi.isRare && " ⭐"}
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          {poi.area} · {poi.category}
+          {poi.area}
+          {mode !== "pick-category" && ` · ${poi.category}`}
         </ThemedText>
 
-        {mode === "choose" ? (
+        {mode === "pick-category" ? (
+          <>
+            <ThemedText
+              type="small"
+              themeColor="textSecondary"
+              style={styles.sectionLabel}
+            >
+              {t("pickCategory.header")}
+            </ThemedText>
+            <View style={styles.pickerGrid}>
+              {PICKER_ITEMS.map(({ category, emoji }) => {
+                const delta = CATEGORY_DELTA[category];
+                const traits = Object.entries(delta)
+                  .filter(([, v]) => typeof v === "number" && v > 0)
+                  .map(([k]) =>
+                    t(`attr.${k}` as StringKey)
+                  )
+                  .join(" · ");
+                return (
+                  <TouchableOpacity
+                    key={category}
+                    onPress={() => onPickCategory(category)}
+                    style={[
+                      styles.pickerCell,
+                      {
+                        borderColor: theme.backgroundSelected,
+                        backgroundColor: theme.backgroundElement,
+                      },
+                    ]}
+                  >
+                    <ThemedText style={styles.pickerEmoji}>{emoji}</ThemedText>
+                    <ThemedText style={styles.pickerLabel}>
+                      {t(`poiCategory.${category}` as StringKey)}
+                    </ThemedText>
+                    <ThemedText
+                      type="small"
+                      themeColor="textSecondary"
+                      style={styles.pickerTraits}
+                    >
+                      {traits}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        ) : mode === "choose" ? (
           <View style={styles.chooseRow}>
             <TouchableOpacity
               onPress={() => submit(true)}
@@ -343,4 +420,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   submitText: { color: "white", fontSize: 16, fontWeight: "600" },
+  pickerGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+  },
+  pickerCell: {
+    width: "31%",
+    borderWidth: 1,
+    borderRadius: Spacing.three,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.two,
+    alignItems: "center",
+    gap: 2,
+  },
+  pickerEmoji: { fontSize: 24, lineHeight: 28 },
+  pickerLabel: { fontSize: 13, fontWeight: "500" },
+  pickerTraits: { fontSize: 10, textAlign: "center" },
 });
