@@ -14,7 +14,6 @@ import { VideoView, useVideoPlayer } from "expo-video";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { InitialAvatarModal } from "@/components/InitialAvatarModal";
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { MIA_USER } from "@/lib/fake-user";
@@ -34,6 +33,77 @@ const LANG_OPTIONS: { value: Locale; label: string }[] = [
   { value: "zh", label: "中文" },
   { value: "en", label: "English" },
 ];
+
+type TrendDirection = "up" | "down" | "steady";
+
+type TrendRow = {
+  id: string;
+  direction: TrendDirection;
+  labelKey: StringKey;
+  phraseKey: StringKey;
+  intensity: number; // 0-5
+};
+
+const TREND_ARROW: Record<TrendDirection, string> = {
+  up: "↑",
+  down: "↓",
+  steady: "→",
+};
+
+const TREND_COLOR: Record<TrendDirection, string> = {
+  up: "#7c3aed",
+  down: "#94a3b8",
+  steady: "#64748b",
+};
+
+const TREND_ROWS: Record<"week" | "month", TrendRow[]> = {
+  week: [
+    {
+      id: "night",
+      direction: "up",
+      labelKey: "profile.trend.night.label",
+      phraseKey: "profile.trend.night.phrase.week",
+      intensity: 4,
+    },
+    {
+      id: "athletic",
+      direction: "down",
+      labelKey: "profile.trend.athletic.label",
+      phraseKey: "profile.trend.athletic.phrase.week",
+      intensity: 2,
+    },
+    {
+      id: "aesthete",
+      direction: "steady",
+      labelKey: "profile.trend.aesthete.label",
+      phraseKey: "profile.trend.aesthete.phrase.week",
+      intensity: 3,
+    },
+  ],
+  month: [
+    {
+      id: "night",
+      direction: "up",
+      labelKey: "profile.trend.night.label",
+      phraseKey: "profile.trend.night.phrase.month",
+      intensity: 5,
+    },
+    {
+      id: "athletic",
+      direction: "down",
+      labelKey: "profile.trend.athletic.label",
+      phraseKey: "profile.trend.athletic.phrase.month",
+      intensity: 2,
+    },
+    {
+      id: "aesthete",
+      direction: "up",
+      labelKey: "profile.trend.aesthete.label",
+      phraseKey: "profile.trend.aesthete.phrase.month",
+      intensity: 4,
+    },
+  ],
+};
 
 type AchievementStatus = "active" | "sleeping";
 
@@ -118,12 +188,11 @@ export default function ProfileScreen() {
     locale,
     setLocale,
     character,
-    initialAvatarEditUsed,
   } = useLifeGOStore();
   const insets = useSafeAreaInsets();
   const t = useT();
 
-  const [modalVisible, setModalVisible] = useState(false);
+  const [period, setPeriod] = useState<"week" | "month">("week");
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
   const achievements = useMemo(
@@ -172,34 +241,40 @@ export default function ProfileScreen() {
                 ? t("character.growth.playingNote")
                 : t("character.growth.subtitle")}
             </ThemedText>
-          </ThemedView>
 
-          {/* ── 初始形象入口（一次性）────────────────────────────── */}
-          <TouchableOpacity
-            activeOpacity={0.86}
-            disabled={initialAvatarEditUsed}
-            onPress={() => setModalVisible(true)}
-          >
-            <ThemedView type="backgroundElement" style={styles.entryCard}>
-              <View style={styles.entryCopy}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t("profile.initialAvatar.title")}
-                </ThemedText>
-                <ThemedText>
-                  {initialAvatarEditUsed
-                    ? t("profile.initialAvatar.usedCompact")
-                    : t("profile.initialAvatar.subtitleCompact")}
-                </ThemedText>
-              </View>
-              <ThemedView type="backgroundSelected" style={styles.valuePill}>
-                <ThemedText type="smallBold">
-                  {initialAvatarEditUsed
-                    ? t("profile.initialAvatar.doneCompact")
-                    : t("profile.initialAvatar.once")}
-                </ThemedText>
-              </ThemedView>
-            </ThemedView>
-          </TouchableOpacity>
+            <View style={styles.segmentRow}>
+              {(["week", "month"] as const).map((value) => (
+                <TouchableOpacity
+                  key={value}
+                  onPress={() => setPeriod(value)}
+                  style={[
+                    styles.segmentButton,
+                    period === value && styles.segmentButtonActive,
+                  ]}
+                >
+                  <ThemedText
+                    type="smallBold"
+                    style={period === value && styles.segmentTextActive}
+                  >
+                    {t(
+                      value === "week"
+                        ? "profile.growthRings.week"
+                        : "profile.growthRings.month"
+                    )}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <ThemedText type="smallBold">
+              {t("profile.growthRings.stageHeader")}
+            </ThemedText>
+            <View style={styles.trendList}>
+              {TREND_ROWS[period].map((row) => (
+                <TrendRowView key={row.id} row={row} />
+              ))}
+            </View>
+          </ThemedView>
 
           {/* ── 成就档案：6 个形象状态，仅当前 active，其余 sleeping ─── */}
           <ThemedView type="backgroundElement" style={styles.card}>
@@ -281,10 +356,6 @@ export default function ProfileScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <InitialAvatarModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-      />
       <SettingsModal
         visible={settingsModalVisible}
         onClose={() => setSettingsModalVisible(false)}
@@ -319,6 +390,37 @@ function GrowthRingSlot({ character }: { character: CharacterState }) {
         {t("character.growth.hint")}
       </ThemedText>
     </ThemedView>
+  );
+}
+
+function TrendRowView({ row }: { row: TrendRow }) {
+  const t = useT();
+  const color = TREND_COLOR[row.direction];
+  return (
+    <View style={styles.trendRow}>
+      <ThemedText style={[styles.trendArrow, { color }]}>
+        {TREND_ARROW[row.direction]}
+      </ThemedText>
+      <ThemedText type="smallBold" style={styles.trendLabel}>
+        {t(row.labelKey)}
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.trendPhrase}>
+        {t(row.phraseKey)}
+      </ThemedText>
+      <View style={styles.trendDots}>
+        {Array.from({ length: 5 }).map((_, idx) => (
+          <View
+            key={idx}
+            style={[
+              styles.trendDot,
+              idx < row.intensity
+                ? { backgroundColor: color }
+                : styles.trendDotInactive,
+            ]}
+          />
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -477,6 +579,42 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   headerCopy: { flex: 1 },
+  // ── Trend rows (under growth-ring video) ───────────────────────────
+  segmentRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three,
+    borderWidth: 1.5,
+    borderColor: "rgba(0,0,0,0.12)",
+    alignItems: "center",
+  },
+  segmentButtonActive: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  segmentTextActive: { color: "white" },
+  trendList: { gap: Spacing.two },
+  trendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  trendArrow: {
+    width: 20,
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  trendLabel: { width: 80 },
+  trendPhrase: { flex: 1 },
+  trendDots: { flexDirection: "row", gap: 3 },
+  trendDot: { width: 6, height: 6, borderRadius: 3 },
+  trendDotInactive: { backgroundColor: "rgba(0,0,0,0.12)" },
   settingsDot: {
     width: 44,
     height: 44,
