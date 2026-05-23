@@ -17,13 +17,12 @@ import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { MIA_USER } from "@/lib/fake-user";
+import type { AttributeKey, Attributes } from "@/lib/attributes";
 import {
   OUTFITS,
   OUTFIT_META,
-  STAGES,
-  STAGE_META,
-  type CharacterStage,
   type CharacterState,
+  type CharacterVisual,
   type OutfitId,
   type ResolvedVisual,
 } from "@/lib/character";
@@ -108,70 +107,61 @@ const TREND_ROWS: Record<"week" | "month", TrendRow[]> = {
   ],
 };
 
-// ── Stage progress (sprout → shape → awaken) ────────────────────────────
-type StageItem = {
-  stage: CharacterStage;
-  emoji: string;
-  titleKey: StringKey;
-  visited: boolean;
-  current: boolean;
-};
+// ── Achievement archive (3 outfits × 3 states) ──────────────────────────
+type AchievementStatus = "active" | "fading" | "sleeping";
 
-/** Stages are temporal markers. "Visited" = present in visualHistory.
- *  "Current" = the stage the user is at *right now* — if their current visual
- *  is a stage, that one; otherwise the highest visited stage (because outfits
- *  are parallel skins, not stage regressions). */
-function stageProgress(
-  currentVisual: ResolvedVisual,
-  visualHistory: ResolvedVisual[]
-): StageItem[] {
-  const seen = new Set(visualHistory);
-  let currentStage: CharacterStage | null = null;
-  if (currentVisual.startsWith("stage-")) {
-    currentStage = currentVisual.slice(6) as CharacterStage;
-  } else {
-    // Highest visited stage (rightmost in STAGES order)
-    for (let i = STAGES.length - 1; i >= 0; i--) {
-      if (seen.has(`stage-${STAGES[i]}`)) {
-        currentStage = STAGES[i];
-        break;
-      }
-    }
-  }
-  return STAGES.map((s) => ({
-    stage: s,
-    emoji: STAGE_META[s].emoji,
-    titleKey: STAGE_META[s].titleKey,
-    visited: seen.has(`stage-${s}`),
-    current: currentStage === s,
-  }));
-}
-
-// ── Wardrobe (3 outfit cards) ───────────────────────────────────────────
-type OutfitStatus = "current" | "unlocked" | "locked";
-
-type OutfitItem = {
+type OutfitAchievement = {
+  id: string;
   outfit: OutfitId;
   emoji: string;
   titleKey: StringKey;
-  status: OutfitStatus;
+  status: AchievementStatus;
 };
 
-function outfitWardrobe(
+/** Each outfit's underlying 6D axis. Decay on that axis = the outfit fades. */
+const OUTFIT_AXIS: Record<OutfitId, AttributeKey> = {
+  sport: "athletic",
+  art: "aesthete",
+  social: "social",
+};
+
+/** Above this post-Q1 delta the user could plausibly wear this outfit — so
+ *  it counts as "fading" rather than "sleeping" when it's not the current one.
+ *  Half the activation threshold (6) — keeps the recovery window meaningful. */
+const FADING_DELTA_THRESHOLD = 3;
+
+/**
+ * Build the 3-outfit archive. States:
+ *   active   = currently worn
+ *   fading   = previously worn OR axis still close to threshold (recoverable)
+ *   sleeping = never reached or axis fully decayed
+ */
+function outfitArchive(
   currentVisual: ResolvedVisual,
-  visualHistory: ResolvedVisual[]
-): OutfitItem[] {
-  const seen = new Set(visualHistory);
-  return OUTFITS.map((o) => {
-    const key = `outfit-${o}` as const;
-    let status: OutfitStatus;
-    if (currentVisual === key) status = "current";
-    else if (seen.has(key)) status = "unlocked";
-    else status = "locked";
+  visualHistory: ResolvedVisual[],
+  attributes: Attributes,
+  q1SnapshotAttrs: Attributes
+): OutfitAchievement[] {
+  const visited = new Set(visualHistory);
+  return OUTFITS.map((outfit) => {
+    const visualKey = `outfit-${outfit}` as CharacterVisual;
+    let status: AchievementStatus;
+    if (currentVisual === visualKey) {
+      status = "active";
+    } else {
+      const delta = attributes[OUTFIT_AXIS[outfit]] - q1SnapshotAttrs[OUTFIT_AXIS[outfit]];
+      const closeToThreshold = delta >= FADING_DELTA_THRESHOLD;
+      if (visited.has(visualKey) || closeToThreshold) {
+        status = "fading";
+      } else {
+        status = "sleeping";
+      }
+    }
     return {
-      outfit: o,
-      emoji: OUTFIT_META[o].emoji,
-      titleKey: OUTFIT_META[o].titleKey,
+      id: `outfit-${outfit}`,
+      outfit,
+      emoji: OUTFIT_META[outfit].emoji,
+      titleKey: OUTFIT_META[outfit].titleKey,
       status,
     };
   });
@@ -225,6 +215,8 @@ export default function ProfileScreen() {
     setLocale,
     character,
     visualHistory,
+    attributes,
+    q1SnapshotAttrs,
   } = useLifeGOStore();
   const insets = useSafeAreaInsets();
   const t = useT();
@@ -232,18 +224,11 @@ export default function ProfileScreen() {
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
-  const stages = useMemo(
-    () => stageProgress(character.visual, visualHistory),
-    [character.visual, visualHistory]
+  const outfits = useMemo(
+    () =>
+      outfitArchive(character.visual, visualHistory, attributes, q1SnapshotAttrs),
+    [character.visual, visualHistory, attributes, q1SnapshotAttrs]
   );
-  const wardrobe = useMemo(
-    () => outfitWardrobe(character.visual, visualHistory),
-    [character.visual, visualHistory]
-  );
-  const currentStageLabel = useMemo(() => {
-    const cur = stages.find((s) => s.current);
-    return cur ? t(cur.titleKey) : t(STAGE_META.sprout.titleKey);
-  }, [stages, t]);
   const hiddenTraits = useMemo(() => hiddenTraitsFromEggs(eggs), [eggs]);
 
   return (
@@ -321,84 +306,33 @@ export default function ProfileScreen() {
             </View>
           </ThemedView>
 
-          {/* ── 成长阶段：3 stage 进度线 ──────────────────────────── */}
-          <ThemedView type="backgroundElement" style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.flexOne}>
-                <ThemedText type="subtitle">
-                  {t("profile.stageProgress.title")}
-                </ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t("profile.stageProgress.summary", {
-                    stage: currentStageLabel,
-                  })}
-                </ThemedText>
-              </View>
-            </View>
-            <View style={styles.stageRow}>
-              {stages.map((s, idx) => (
-                <View key={s.stage} style={styles.stageItemWrap}>
-                  <View
-                    style={[
-                      styles.stageDot,
-                      s.visited && styles.stageDotVisited,
-                      s.current && styles.stageDotCurrent,
-                    ]}
-                  >
-                    <ThemedText style={styles.stageDotEmoji}>
-                      {s.emoji}
-                    </ThemedText>
-                  </View>
-                  <ThemedText
-                    type="smallBold"
-                    style={s.current ? styles.stageLabelCurrent : undefined}
-                  >
-                    {t(s.titleKey)}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {s.current
-                      ? t("profile.stageProgress.current")
-                      : s.visited
-                        ? t("profile.stageProgress.passed")
-                        : t("profile.stageProgress.future")}
-                  </ThemedText>
-                  {idx < stages.length - 1 && (
-                    <View
-                      style={[
-                        styles.stageConnector,
-                        stages[idx + 1].visited && styles.stageConnectorActive,
-                      ]}
-                    />
-                  )}
-                </View>
-              ))}
-            </View>
-          </ThemedView>
-
-          {/* ── 形象库：3 outfit 卡 ──────────────────────────────── */}
+          {/* ── 成就档案：3 outfit × 3 态 ─────────────────────────── */}
           <ThemedView type="backgroundElement" style={styles.card}>
             <View style={styles.flexOne}>
               <ThemedText type="subtitle">
-                {t("profile.wardrobe.title")}
+                {t("profile.achievements.title")}
               </ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {t("profile.wardrobe.subtitle")}
+                {t("profile.achievements.summary", {
+                  active: outfits.filter((o) => o.status === "active").length,
+                  fading: outfits.filter((o) => o.status === "fading").length,
+                  sleeping: outfits.filter((o) => o.status === "sleeping").length,
+                })}
               </ThemedText>
             </View>
             <View style={styles.wardrobeRow}>
-              {wardrobe.map((o) => (
+              {outfits.map((o) => (
                 <ThemedView
-                  key={o.outfit}
+                  key={o.id}
                   type="backgroundSelected"
                   style={[
                     styles.wardrobeCard,
-                    o.status === "current" && styles.wardrobeCardCurrent,
-                    o.status === "locked" && styles.wardrobeCardLocked,
+                    o.status === "active" && styles.wardrobeCardActive,
+                    o.status === "fading" && styles.wardrobeCardFading,
+                    o.status === "sleeping" && styles.wardrobeCardSleeping,
                   ]}
                 >
-                  <ThemedText style={styles.wardrobeIcon}>
-                    {o.status === "locked" ? "✦" : o.emoji}
-                  </ThemedText>
+                  <ThemedText style={styles.wardrobeIcon}>{o.emoji}</ThemedText>
                   <ThemedText type="smallBold" numberOfLines={1}>
                     {t(o.titleKey)}
                   </ThemedText>
@@ -406,19 +340,19 @@ export default function ProfileScreen() {
                     type="small"
                     themeColor="textSecondary"
                     style={
-                      o.status === "current"
-                        ? styles.wardrobeStatusCurrent
+                      o.status === "active"
+                        ? styles.wardrobeStatusActive
                         : undefined
                     }
                   >
-                    {t(`profile.wardrobe.${o.status}` as StringKey)}
+                    {t(`profile.achievements.${o.status}` as StringKey)}
                   </ThemedText>
                 </ThemedView>
               ))}
             </View>
           </ThemedView>
 
-          {/* ── 隐藏特质：解锁的成卡 + 未解锁的 ✦ 悬念卡 ───────── */}
+          {/* ── 隐藏特质：横排（icon + 称号 + 解释，未解锁灰锁） ───── */}
           <ThemedView type="backgroundElement" style={styles.card}>
             <View style={styles.flexOne}>
               <ThemedText type="subtitle">
@@ -428,34 +362,44 @@ export default function ProfileScreen() {
                 {t("profile.hiddenTraits.subtitle")}
               </ThemedText>
             </View>
-            <View style={styles.traitList}>
+            <View style={styles.traitGrid}>
               {hiddenTraits.map((trait) => (
                 <ThemedView
                   key={trait.id}
                   type="backgroundSelected"
                   style={[
-                    styles.hiddenTraitRow,
-                    !trait.unlocked && styles.hiddenTraitLocked,
+                    styles.traitTile,
+                    !trait.unlocked && styles.traitTileLocked,
                   ]}
                 >
                   <ThemedText
                     style={[
-                      styles.hiddenTraitIcon,
-                      !trait.unlocked && styles.hiddenTraitIconLocked,
+                      styles.traitTileIcon,
+                      !trait.unlocked && styles.traitTileIconLocked,
                     ]}
                   >
-                    {trait.unlocked ? trait.icon : "✦"}
+                    {trait.unlocked ? trait.icon : "🔒"}
                   </ThemedText>
-                  <View style={styles.flexOne}>
-                    <ThemedText type="smallBold">
-                      {trait.unlocked
-                        ? t(trait.titleKey)
-                        : t("profile.hiddenTraits.locked")}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {t(trait.detailKey)}
-                    </ThemedText>
-                  </View>
+                  <ThemedText
+                    type="smallBold"
+                    style={[
+                      styles.traitTileTitle,
+                      !trait.unlocked && styles.traitTileTextLocked,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {trait.unlocked
+                      ? t(trait.titleKey)
+                      : t("profile.hiddenTraits.locked")}
+                  </ThemedText>
+                  <ThemedText
+                    type="small"
+                    themeColor="textSecondary"
+                    style={styles.traitTileDesc}
+                    numberOfLines={3}
+                  >
+                    {t(trait.detailKey)}
+                  </ThemedText>
                 </ThemedView>
               ))}
             </View>
@@ -686,65 +630,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   headerCopy: { flex: 1 },
-  cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: Spacing.three,
-  },
-  viewAllLink: {
-    color: "#7c3aed",
-    paddingTop: Spacing.one,
-  },
-  // ── Stage progress (3-dot horizontal track) ────────────────────────
-  stageRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.one,
-  },
-  stageItemWrap: {
-    flex: 1,
-    alignItems: "center",
-    position: "relative",
-    gap: Spacing.one,
-  },
-  stageDot: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 2,
-    borderColor: "rgba(0,0,0,0.12)",
-    backgroundColor: "rgba(0,0,0,0.02)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stageDotEmoji: { fontSize: 24, lineHeight: 28 },
-  stageDotVisited: {
-    backgroundColor: "rgba(124,58,237,0.10)",
-    borderColor: "rgba(124,58,237,0.35)",
-  },
-  stageDotCurrent: {
-    backgroundColor: "#7c3aed",
-    borderColor: "#7c3aed",
-  },
-  stageLabelCurrent: {
-    color: "#7c3aed",
-  },
-  stageConnector: {
-    position: "absolute",
-    top: 25,
-    right: "-50%",
-    left: "50%",
-    height: 2,
-    marginLeft: 26,
-    marginRight: 26,
-    backgroundColor: "rgba(0,0,0,0.10)",
-  },
-  stageConnectorActive: {
-    backgroundColor: "rgba(124,58,237,0.45)",
-  },
-  // ── Wardrobe (3 outfit cards) ──────────────────────────────────────
+  // ── Achievement archive (3 outfit cards × 3 states) ─────────────────
   wardrobeRow: {
     flexDirection: "row",
     gap: Spacing.two,
@@ -757,19 +643,44 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minHeight: 110,
   },
-  wardrobeCardCurrent: {
+  wardrobeCardActive: {
     borderWidth: 1.5,
     borderColor: "#7c3aed",
   },
-  wardrobeCardLocked: {
-    opacity: 0.55,
+  wardrobeCardFading: {
+    opacity: 0.72,
+    borderWidth: 1.5,
+    borderColor: "rgba(124,58,237,0.25)",
+  },
+  wardrobeCardSleeping: {
+    opacity: 0.5,
   },
   wardrobeIcon: { fontSize: 30, lineHeight: 36 },
-  wardrobeStatusCurrent: {
+  wardrobeStatusActive: {
     color: "#7c3aed",
     fontWeight: "700",
   },
-  archivePreviewIcon: { fontSize: 28, lineHeight: 34 },
+  // ── Hidden traits horizontal grid (3 tiles in a row) ───────────────
+  traitGrid: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  traitTile: {
+    flex: 1,
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    gap: Spacing.one,
+    alignItems: "center",
+    minHeight: 124,
+  },
+  traitTileLocked: {
+    opacity: 0.6,
+  },
+  traitTileIcon: { fontSize: 28, lineHeight: 34 },
+  traitTileIconLocked: { color: "#9ca3af" },
+  traitTileTitle: { textAlign: "center" },
+  traitTileTextLocked: { color: "#6b7280" },
+  traitTileDesc: { textAlign: "center" },
   // ── Trend rows (under growth-ring video) ───────────────────────────
   segmentRow: {
     flexDirection: "row",
@@ -852,43 +763,6 @@ const styles = StyleSheet.create({
   growthVideoFill: { width: "100%", height: "100%" },
   videoTitle: { fontSize: 18, lineHeight: 24, fontWeight: "700" },
   centerText: { textAlign: "center" },
-  // ── Archive grid ────────────────────────────────────────────────────
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.two,
-  },
-  archiveItem: {
-    width: "48%",
-    minHeight: 156,
-    borderRadius: Spacing.three,
-    padding: Spacing.three,
-    gap: Spacing.one,
-  },
-  fadingItem: {
-    opacity: 0.72,
-    borderWidth: 1.5,
-    borderColor: "rgba(124,58,237,0.25)",
-  },
-  sleepingItem: {
-    opacity: 0.55,
-    borderWidth: 1.5,
-    borderColor: "rgba(0,0,0,0.08)",
-  },
-  archiveIcon: { fontSize: 28, lineHeight: 34 },
-  archiveStatusLine: { marginTop: Spacing.one, fontWeight: "600" },
-  // ── Hidden traits ───────────────────────────────────────────────────
-  traitList: { gap: Spacing.two },
-  hiddenTraitRow: {
-    flexDirection: "row",
-    gap: Spacing.three,
-    borderRadius: Spacing.three,
-    padding: Spacing.three,
-    alignItems: "flex-start",
-  },
-  hiddenTraitLocked: { opacity: 0.55 },
-  hiddenTraitIcon: { fontSize: 26, lineHeight: 32 },
-  hiddenTraitIconLocked: { color: "#9ca3af" },
   privacyRow: {
     flexDirection: "row",
     alignItems: "center",

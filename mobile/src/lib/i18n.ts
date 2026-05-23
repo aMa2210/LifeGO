@@ -252,23 +252,6 @@ export const STRINGS = {
     zh: "新解锁的套装会自动穿上。",
     en: "Newly unlocked outfit is worn automatically.",
   },
-  // ── Stage progress + wardrobe (profile cards) ──────────────────────────
-  "profile.stageProgress.title": { zh: "成长阶段", en: "Growth stages" },
-  "profile.stageProgress.passed": { zh: "已走过", en: "Passed" },
-  "profile.stageProgress.current": { zh: "现在", en: "Now" },
-  "profile.stageProgress.future": { zh: "未到", en: "Not yet" },
-  "profile.stageProgress.summary": {
-    zh: "你正在 {stage}",
-    en: "You're at {stage}",
-  },
-  "profile.wardrobe.title": { zh: "形象库", en: "Wardrobe" },
-  "profile.wardrobe.subtitle": {
-    zh: "继续探索 / 我做了什么，解锁更多形象。",
-    en: "Keep exploring to unlock more outfits.",
-  },
-  "profile.wardrobe.current": { zh: "当前穿着", en: "Wearing now" },
-  "profile.wardrobe.unlocked": { zh: "已解锁", en: "Unlocked" },
-  "profile.wardrobe.locked": { zh: "未解锁", en: "Locked" },
   // ── Mood stickers ──────────────────────────────────────────────────────
   "mood.sweat": { zh: "刚动过", en: "Just moved" },
   "mood.caffeinated": { zh: "咖啡因充能", en: "Caffeinated" },
