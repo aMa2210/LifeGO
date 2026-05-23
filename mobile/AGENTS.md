@@ -36,13 +36,18 @@ and gotcha catalog. Read it before non-trivial changes.
 
 ## LLM (Gemini)
 
+- LLM calls go through a Cloudflare Worker proxy (see `workers/llm-proxy/`)
+  so the Gemini API key never lands in the client bundle. The client only
+  needs `EXPO_PUBLIC_LLM_PROXY_URL` pointing at the deployed Worker.
 - `lib/persona.ts` and `lib/recommend.ts` accept a `locale` param and switch
   system prompt + mock fallback accordingly. Mock data is the fallback when
-  `EXPO_PUBLIC_GEMINI_API_KEY` is unset — so screens stay testable without
-  a key.
+  `EXPO_PUBLIC_LLM_PROXY_URL` is unset — so screens stay testable without
+  a deployed proxy.
 - Both functions use `gemini-2.5-flash` (not -pro). 30× cheaper, 1500 RPD
-  vs 50 RPD, equivalent output quality for our prompts. Smoke-tested with
-  `node --env-file=.env scripts/test-persona.mjs`.
+  vs 50 RPD, equivalent output quality for our prompts.
+- Never put `EXPO_PUBLIC_GEMINI_API_KEY` back into `mobile/.env` — anything
+  with the `EXPO_PUBLIC_` prefix is inlined into the web/native bundle and
+  becomes public. The key stays only as a Cloudflare Worker secret.
 
 ## Apple Developer caveat
 

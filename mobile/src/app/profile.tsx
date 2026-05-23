@@ -7,10 +7,11 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { AttributeRadar } from "@/components/AttributeRadar";
+import { ElementCard } from "@/components/ElementCard";
+import { GrowthStageCard } from "@/components/GrowthStageCard";
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { useLifeGOStore } from "@/lib/store";
-import { ATTRIBUTE_KEYS, ATTRIBUTE_LABELS } from "@/lib/attributes";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
 import { useT, translate, type Locale } from "@/lib/i18n";
 
@@ -78,19 +79,8 @@ export default function ProfileScreen() {
             <AttributeRadar attributes={attributes} max={14} size={300} />
           </View>
 
-          <ThemedView type="backgroundElement" style={styles.card}>
-            <ThemedText type="small" themeColor="textSecondary">
-              {t("profile.attrsHeader")}
-            </ThemedText>
-            {ATTRIBUTE_KEYS.map((k) => (
-              <View key={k} style={styles.attrRow}>
-                <ThemedText>
-                  {ATTRIBUTE_LABELS[k][locale === "en" ? "en" : "zh"]}
-                </ThemedText>
-                <ThemedText type="code">{attributes[k]}</ThemedText>
-              </View>
-            ))}
-          </ThemedView>
+          <ElementCard attributes={attributes} />
+          <GrowthStageCard checkinCount={checkins.length} />
 
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="small" themeColor="textSecondary">

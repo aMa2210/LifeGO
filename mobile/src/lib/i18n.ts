@@ -327,6 +327,64 @@ export const STRINGS = {
   "poiCategory.livehouse":  { zh: "Live house", en: "Livehouse" },
   "poiCategory.market":     { zh: "市集",       en: "Market" },
 
+  // ── Element card (含混指标 — dominant attribute → element) ──────────────
+  "element.header": { zh: "你的元素", en: "Your element" },
+  "element.unformed": {
+    zh: "还未显形——再打卡试试",
+    en: "Not yet visible — try a few check-ins",
+  },
+  "element.explorer.name": { zh: "风", en: "Wind" },
+  "element.explorer.desc": {
+    zh: "不被一个地方留住的人。",
+    en: "Not the kind to be held by one place.",
+  },
+  "element.social.name": { zh: "火", en: "Fire" },
+  "element.social.desc": {
+    zh: "聚起来的时候世界才完整。",
+    en: "The world's only whole when there are others in it.",
+  },
+  "element.athletic.name": { zh: "山", en: "Mountain" },
+  "element.athletic.desc": {
+    zh: "靠重复站稳。",
+    en: "Stands by repetition.",
+  },
+  "element.foodie.name": { zh: "水", en: "Water" },
+  "element.foodie.desc": {
+    zh: "汇聚味道与饱满。",
+    en: "Gathers flavor and fullness.",
+  },
+  "element.aesthete.name": { zh: "月", en: "Moon" },
+  "element.aesthete.desc": {
+    zh: "在不被看见的时候最清醒。",
+    en: "Sharpest when no one's watching.",
+  },
+  "element.productive.name": { zh: "日", en: "Sun" },
+  "element.productive.desc": {
+    zh: "把模糊的事情烧成清晰。",
+    en: "Burns the foggy into sharp.",
+  },
+
+  // ── Growth stage card ──────────────────────────────────────────────────
+  "stage.header": { zh: "成长阶段", en: "Growth stage" },
+  "stage.remaining": {
+    zh: "再 {n} 次抵达「{next}」",
+    en: "{n} more to reach {next}",
+  },
+  "stage.final": {
+    zh: "已经走到最后一程——继续就是。",
+    en: "You've reached the last stage — keep going anyway.",
+  },
+  "stage.seed.name":   { zh: "种子",   en: "Seed" },
+  "stage.seed.desc":   { zh: "你刚开始留下痕迹。",        en: "Just starting to leave a mark." },
+  "stage.sprout.name": { zh: "萌芽",   en: "Sprout" },
+  "stage.sprout.desc": { zh: "形状开始有了方向。",        en: "A shape begins to lean somewhere." },
+  "stage.branch.name": { zh: "抽枝",   en: "Branching" },
+  "stage.branch.desc": { zh: "你的偏好藏不住了。",        en: "Your preferences are getting hard to hide." },
+  "stage.bloom.name":  { zh: "开花",   en: "Bloom" },
+  "stage.bloom.desc":  { zh: "你的样子已经被认出来。",    en: "You've become recognizable as yourself." },
+  "stage.fruit.name":  { zh: "结果",   en: "Fruit" },
+  "stage.fruit.desc":  { zh: "你的轨迹自己说话。",        en: "Your trajectory speaks for itself." },
+
   // ── Attribute labels (mirror lib/attributes.ts) ────────────────────────
   "attr.explorer": { zh: "探索", en: "Explorer" },
   "attr.social": { zh: "社交", en: "Social" },

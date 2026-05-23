@@ -2,8 +2,6 @@
 // Locale-aware: Chinese system prompt + zh mock when locale='zh', English
 // counterparts when locale='en'. Falls back to mock when no API key.
 
-import { SchemaType } from "@google/generative-ai";
-
 import { llm, hasApiKey } from "./llm";
 import type { Attributes } from "./attributes";
 import type { EasterEggId } from "./easter-eggs";
@@ -21,13 +19,15 @@ export type Persona = {
   strengths: string[];
 };
 
+// Gemini OpenAPI-style schema. Types are lowercase strings (mirrors what
+// the @google/generative-ai SDK used to expand SchemaType enum values to).
 const personaSchema = {
-  type: SchemaType.OBJECT,
+  type: "object",
   properties: {
-    title: { type: SchemaType.STRING },
-    subtitle: { type: SchemaType.STRING },
-    description: { type: SchemaType.STRING },
-    strengths: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    title: { type: "string" },
+    subtitle: { type: "string" },
+    description: { type: "string" },
+    strengths: { type: "array", items: { type: "string" } },
   },
   required: ["title", "subtitle", "description", "strengths"],
 };

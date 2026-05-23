@@ -1,7 +1,5 @@
 // Activity recommendations via Gemini 2.5-flash. Locale-aware (zh / en).
 
-import { SchemaType } from "@google/generative-ai";
-
 import { llm, hasApiKey } from "./llm";
 import type { Persona } from "./persona";
 import type { Attributes } from "./attributes";
@@ -18,17 +16,17 @@ export type Recommendation = {
 };
 
 const recommendSchema = {
-  type: SchemaType.OBJECT,
+  type: "object",
   properties: {
     items: {
-      type: SchemaType.ARRAY,
+      type: "array",
       items: {
-        type: SchemaType.OBJECT,
+        type: "object",
         properties: {
-          place: { type: SchemaType.STRING },
-          area: { type: SchemaType.STRING },
-          category: { type: SchemaType.STRING },
-          why: { type: SchemaType.STRING },
+          place: { type: "string" },
+          area: { type: "string" },
+          category: { type: "string" },
+          why: { type: "string" },
         },
         required: ["place", "area", "category", "why"],
       },
