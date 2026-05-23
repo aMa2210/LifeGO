@@ -167,12 +167,11 @@ function outfitArchive(
   });
 }
 
-type HiddenTrait = {
+type UnlockedTrait = {
   id: string;
   icon: string;
   titleKey: StringKey;
   detailKey: StringKey;
-  unlocked: boolean;
 };
 
 const EGG_TITLE_KEY: Record<EasterEggId, StringKey> = {
@@ -187,20 +186,16 @@ const EGG_DESC_KEY: Record<EasterEggId, StringKey> = {
   "lone-wolf": "egg.lone-wolf.desc",
 };
 
-const EGG_LOCKED_KEY: Record<EasterEggId, StringKey> = {
-  nocturnal: "profile.eggLockedHint.nocturnal",
-  "early-bird": "profile.eggLockedHint.earlyBird",
-  "lone-wolf": "profile.eggLockedHint.loneWolf",
-};
-
-function hiddenTraitsFromEggs(eggs: EasterEggId[]): HiddenTrait[] {
-  const unlocked = new Set(eggs);
-  return EASTER_EGGS.map((e) => ({
+/** Only return the eggs the user has actually unlocked. Locked eggs are
+ *  collapsed into a single mystery placeholder rendered separately — we
+ *  never expose their identity or unlock criteria. */
+function unlockedTraitsFromEggs(eggs: EasterEggId[]): UnlockedTrait[] {
+  const set = new Set(eggs);
+  return EASTER_EGGS.filter((e) => set.has(e.id)).map((e) => ({
     id: `egg-${e.id}`,
     icon: e.emoji,
     titleKey: EGG_TITLE_KEY[e.id],
-    detailKey: unlocked.has(e.id) ? EGG_DESC_KEY[e.id] : EGG_LOCKED_KEY[e.id],
-    unlocked: unlocked.has(e.id),
+    detailKey: EGG_DESC_KEY[e.id],
   }));
 }
 
@@ -229,7 +224,8 @@ export default function ProfileScreen() {
       outfitArchive(character.visual, visualHistory, attributes, q1SnapshotAttrs),
     [character.visual, visualHistory, attributes, q1SnapshotAttrs]
   );
-  const hiddenTraits = useMemo(() => hiddenTraitsFromEggs(eggs), [eggs]);
+  const unlockedTraits = useMemo(() => unlockedTraitsFromEggs(eggs), [eggs]);
+  const hasLockedTraits = unlockedTraits.length < EASTER_EGGS.length;
 
   return (
     <ThemedView style={styles.container}>
@@ -363,34 +359,21 @@ export default function ProfileScreen() {
               </ThemedText>
             </View>
             <View style={styles.traitGrid}>
-              {hiddenTraits.map((trait) => (
+              {unlockedTraits.map((trait) => (
                 <ThemedView
                   key={trait.id}
                   type="backgroundSelected"
-                  style={[
-                    styles.traitTile,
-                    !trait.unlocked && styles.traitTileLocked,
-                  ]}
+                  style={styles.traitTile}
                 >
-                  <ThemedText
-                    style={[
-                      styles.traitTileIcon,
-                      !trait.unlocked && styles.traitTileIconLocked,
-                    ]}
-                  >
-                    {trait.unlocked ? trait.icon : "🔒"}
+                  <ThemedText style={styles.traitTileIcon}>
+                    {trait.icon}
                   </ThemedText>
                   <ThemedText
                     type="smallBold"
-                    style={[
-                      styles.traitTileTitle,
-                      !trait.unlocked && styles.traitTileTextLocked,
-                    ]}
+                    style={styles.traitTileTitle}
                     numberOfLines={1}
                   >
-                    {trait.unlocked
-                      ? t(trait.titleKey)
-                      : t("profile.hiddenTraits.locked")}
+                    {t(trait.titleKey)}
                   </ThemedText>
                   <ThemedText
                     type="small"
@@ -402,6 +385,25 @@ export default function ProfileScreen() {
                   </ThemedText>
                 </ThemedView>
               ))}
+              {hasLockedTraits && (
+                <ThemedView
+                  type="backgroundSelected"
+                  style={[styles.traitTile, styles.traitTileLocked]}
+                >
+                  <ThemedText
+                    style={[styles.traitTileIcon, styles.traitTileIconLocked]}
+                  >
+                    ✦
+                  </ThemedText>
+                  <ThemedText
+                    type="smallBold"
+                    style={[styles.traitTileTitle, styles.traitTileTextLocked]}
+                    numberOfLines={1}
+                  >
+                    {t("profile.hiddenTraits.lockedTile")}
+                  </ThemedText>
+                </ThemedView>
+              )}
             </View>
           </ThemedView>
         </ScrollView>

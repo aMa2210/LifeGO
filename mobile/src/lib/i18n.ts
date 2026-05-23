@@ -323,21 +323,9 @@ export const STRINGS = {
     zh: "当前激活 {active} / {total} 个形象",
     en: "{active} / {total} visuals active",
   },
-  "profile.hiddenTraits.locked": {
-    zh: "未命名线索",
-    en: "Unnamed clue",
-  },
-  "profile.eggLockedHint.nocturnal": {
-    zh: "累计 3 次 22:00 后打卡可解锁。",
-    en: "Log 3 check-ins after 22:00 to unlock.",
-  },
-  "profile.eggLockedHint.earlyBird": {
-    zh: "累计 3 次 7:00 前打卡可解锁。",
-    en: "Log 3 check-ins before 07:00 to unlock.",
-  },
-  "profile.eggLockedHint.loneWolf": {
-    zh: "累计 5 次留下个人痕迹（长留言或照片）可解锁。",
-    en: "Leave 5 personal traces (long notes or photos) to unlock.",
+  "profile.hiddenTraits.lockedTile": {
+    zh: "待解锁",
+    en: "Locked",
   },
   "unlock.visualChanged": {
     zh: "🎬 人物形象变化",
