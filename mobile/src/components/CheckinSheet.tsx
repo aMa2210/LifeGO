@@ -135,8 +135,11 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
     }
   }, []);
 
-  if (!poi) return null;
-
+  // BottomSheetModal must stay mounted at all times so sheetRef.current is
+  // valid the first time present() is called. Previously we returned null
+  // when poi was null, which meant the first present() call from SearchBar
+  // hit a null ref and silently no-op'd. Keep the modal mounted; just guard
+  // the inner content.
   return (
     <BottomSheetModal
       ref={sheetRef}
@@ -146,6 +149,8 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
       handleIndicatorStyle={{ backgroundColor: theme.textSecondary }}
     >
       <BottomSheetView style={styles.content}>
+        {!poi ? null : (
+          <>
         <ThemedText type="subtitle">
           {poi.name}
           {poi.isRare && " ⭐"}
@@ -342,6 +347,8 @@ export const CheckinSheet = forwardRef<CheckinSheetHandle>(function CheckinSheet
                 </ThemedText>
               </TouchableOpacity>
             </View>
+          </>
+        )}
           </>
         )}
       </BottomSheetView>
