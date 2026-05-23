@@ -252,6 +252,33 @@ export const STRINGS = {
     zh: "新解锁的套装会自动穿上。",
     en: "Newly unlocked outfit is worn automatically.",
   },
+  // ── Stage progress + wardrobe (profile cards) ──────────────────────────
+  "profile.stageProgress.title": { zh: "成长阶段", en: "Growth stages" },
+  "profile.stageProgress.passed": { zh: "已走过", en: "Passed" },
+  "profile.stageProgress.current": { zh: "现在", en: "Now" },
+  "profile.stageProgress.future": { zh: "未到", en: "Not yet" },
+  "profile.stageProgress.summary": {
+    zh: "你正在 {stage}",
+    en: "You're at {stage}",
+  },
+  "profile.wardrobe.title": { zh: "形象库", en: "Wardrobe" },
+  "profile.wardrobe.subtitle": {
+    zh: "继续探索 / 我做了什么，解锁更多形象。",
+    en: "Keep exploring to unlock more outfits.",
+  },
+  "profile.wardrobe.current": { zh: "当前穿着", en: "Wearing now" },
+  "profile.wardrobe.unlocked": { zh: "已解锁", en: "Unlocked" },
+  "profile.wardrobe.locked": { zh: "未解锁", en: "Locked" },
+  // ── Mood stickers ──────────────────────────────────────────────────────
+  "mood.sweat": { zh: "刚动过", en: "Just moved" },
+  "mood.caffeinated": { zh: "咖啡因充能", en: "Caffeinated" },
+  "mood.satisfied": { zh: "吃饱了", en: "Satisfied" },
+  "mood.refreshed": { zh: "在户外充电", en: "Refreshed" },
+  "mood.inspired": { zh: "灵感闪现", en: "Inspired" },
+  "mood.focused": { zh: "正在专注", en: "Focused" },
+  "mood.night-bloom": { zh: "夜行状态", en: "Night-blooming" },
+  "mood.morning-glow": { zh: "清晨能量", en: "Morning glow" },
+  "mood.social-buzz": { zh: "社交发光", en: "Social buzz" },
   "character.archive.stagePast": {
     zh: "已走过的阶段，记录在档。",
     en: "A past stage, kept in the archive.",

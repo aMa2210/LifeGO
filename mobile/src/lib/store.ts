@@ -30,6 +30,7 @@ import {
   type ResolvedVisual,
 } from "./character";
 import { generateDialog, type DialogEntry } from "./dialog";
+import { mergeMoods, moodsFromCheckin, pruneMoods, type Mood } from "./moods";
 
 export type StoredCheckin = {
   id: string;
@@ -86,6 +87,10 @@ type LifeGOState = {
   visualHistory: ResolvedVisual[];
   /** Queued visual-change events to surface via UnlockToast. */
   pendingVisualEvents: VisualChangeEvent[];
+
+  /** Short-lived mood stickers from recent check-ins. Each entry has its own
+   *  `until` timestamp; consumers should call `pruneMoods` on read. */
+  recentMoods: Mood[];
 
   /** Per-check-in AI dialog log. Newest last. */
   dialogLog: DialogEntry[];
@@ -258,6 +263,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
   character: initialChar.next,
   visualHistory: addToVisualHistory([], initialChar.next.visual),
   pendingVisualEvents: [],
+  recentMoods: [],
   dialogLog: [],
 
   persona: null,
@@ -293,6 +299,14 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
 
     const newEggs = r.eggs.filter((e) => !prev.eggs.includes(e));
 
+    const now = Date.now();
+    const fresh = moodsFromCheckin({
+      category: newCheckin.poi.category,
+      timestamp: newCheckin.timestamp,
+      nowMs: now,
+    });
+    const nextMoods = mergeMoods(prev.recentMoods, fresh, now);
+
     set({
       checkins: nextCheckins,
       attributes: r.attributes,
@@ -304,6 +318,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       pendingVisualEvents: event
         ? [...prev.pendingVisualEvents, event]
         : prev.pendingVisualEvents,
+      recentMoods: nextMoods,
       // Invalidate visual-tied content if the visual changed.
       ...(event
         ? { persona: null, recommendations: null }
@@ -364,6 +379,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       character: nextChar,
       visualHistory: addToVisualHistory([], nextChar.visual),
       pendingVisualEvents: [],
+      recentMoods: [],
       dialogLog: [],
       q1SnapshotAttrs: r.attributes,
       persona: null,
@@ -453,6 +469,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       character: emptyChar,
       visualHistory: addToVisualHistory([], emptyChar.visual),
       pendingVisualEvents: [],
+      recentMoods: [],
       dialogLog: [],
       // Snapshot the bottom of the replay so deltas grow as checkins play.
       q1SnapshotAttrs: emptyAttrs,
@@ -478,6 +495,12 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
           archetypeId
         );
         if (event) accumulatedEvents.push(event);
+        const replayNow = Date.now();
+        const replayFresh = moodsFromCheckin({
+          category: c.poi.category,
+          timestamp: c.timestamp,
+          nowMs: replayNow,
+        });
         return {
           checkins: next,
           attributes: r.attributes,
@@ -485,6 +508,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
           eggs: r.eggs,
           character: char,
           visualHistory: addToVisualHistory(state.visualHistory, char.visual),
+          recentMoods: mergeMoods(state.recentMoods, replayFresh, replayNow),
         };
       });
 
@@ -536,6 +560,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       character: nextChar,
       visualHistory: addToVisualHistory([], nextChar.visual),
       pendingVisualEvents: event ? [event] : [],
+      recentMoods: [],
       initialAvatarEditUsed: true,
       initialAvatarEditSummary: profile,
       initialAttributes: profile.initialAttributes,

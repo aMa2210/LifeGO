@@ -18,10 +18,13 @@ import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { MIA_USER } from "@/lib/fake-user";
 import {
-  ALL_VISUALS,
-  VISUAL_META,
+  OUTFITS,
+  OUTFIT_META,
+  STAGES,
+  STAGE_META,
+  type CharacterStage,
   type CharacterState,
-  type CharacterVisual,
+  type OutfitId,
   type ResolvedVisual,
 } from "@/lib/character";
 import { CHANGE_VIDEO_ASSET } from "@/lib/character-assets";
@@ -105,48 +108,71 @@ const TREND_ROWS: Record<"week" | "month", TrendRow[]> = {
   ],
 };
 
-type AchievementStatus = "active" | "fading" | "sleeping";
-
-type Achievement = {
-  id: string;
-  status: AchievementStatus;
-  icon: string;
+// ── Stage progress (sprout → shape → awaken) ────────────────────────────
+type StageItem = {
+  stage: CharacterStage;
+  emoji: string;
   titleKey: StringKey;
-  detailKey: StringKey;
+  visited: boolean;
+  current: boolean;
 };
 
-const VISUAL_DETAIL_KEY: Record<CharacterVisual, StringKey> = {
-  "stage-sprout": "character.archive.sproutDetail",
-  "stage-shape": "character.archive.shapeDetail",
-  "stage-awaken": "character.archive.awakenDetail",
-  "outfit-sport": "character.archive.sportDetail",
-  "outfit-art": "character.archive.artDetail",
-  "outfit-social": "character.archive.socialDetail",
-};
-
-/** Build the achievement archive: every visual exists as a slot, classified by
- *  visualHistory:
- *    active  = currently displayed visual
- *    fading  = previously displayed at some point, but not current anymore
- *    sleeping = never displayed
- *  Eggs do NOT appear here — they live in the Hidden Traits card. */
-function archiveFromVisual(
+/** Stages are temporal markers. "Visited" = present in visualHistory.
+ *  "Current" = the stage the user is at *right now* — if their current visual
+ *  is a stage, that one; otherwise the highest visited stage (because outfits
+ *  are parallel skins, not stage regressions). */
+function stageProgress(
   currentVisual: ResolvedVisual,
   visualHistory: ResolvedVisual[]
-): Achievement[] {
+): StageItem[] {
   const seen = new Set(visualHistory);
-  return ALL_VISUALS.map((v) => {
-    const meta = VISUAL_META[v];
-    let status: AchievementStatus;
-    if (currentVisual === v) status = "active";
-    else if (seen.has(v)) status = "fading";
-    else status = "sleeping";
+  let currentStage: CharacterStage | null = null;
+  if (currentVisual.startsWith("stage-")) {
+    currentStage = currentVisual.slice(6) as CharacterStage;
+  } else {
+    // Highest visited stage (rightmost in STAGES order)
+    for (let i = STAGES.length - 1; i >= 0; i--) {
+      if (seen.has(`stage-${STAGES[i]}`)) {
+        currentStage = STAGES[i];
+        break;
+      }
+    }
+  }
+  return STAGES.map((s) => ({
+    stage: s,
+    emoji: STAGE_META[s].emoji,
+    titleKey: STAGE_META[s].titleKey,
+    visited: seen.has(`stage-${s}`),
+    current: currentStage === s,
+  }));
+}
+
+// ── Wardrobe (3 outfit cards) ───────────────────────────────────────────
+type OutfitStatus = "current" | "unlocked" | "locked";
+
+type OutfitItem = {
+  outfit: OutfitId;
+  emoji: string;
+  titleKey: StringKey;
+  status: OutfitStatus;
+};
+
+function outfitWardrobe(
+  currentVisual: ResolvedVisual,
+  visualHistory: ResolvedVisual[]
+): OutfitItem[] {
+  const seen = new Set(visualHistory);
+  return OUTFITS.map((o) => {
+    const key = `outfit-${o}` as const;
+    let status: OutfitStatus;
+    if (currentVisual === key) status = "current";
+    else if (seen.has(key)) status = "unlocked";
+    else status = "locked";
     return {
-      id: `visual-${v}`,
+      outfit: o,
+      emoji: OUTFIT_META[o].emoji,
+      titleKey: OUTFIT_META[o].titleKey,
       status,
-      icon: meta.emoji,
-      titleKey: meta.titleKey,
-      detailKey: VISUAL_DETAIL_KEY[v],
     };
   });
 }
@@ -205,14 +231,19 @@ export default function ProfileScreen() {
 
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
-  const [archiveModalVisible, setArchiveModalVisible] = useState(false);
-  const [archiveFilter, setArchiveFilter] =
-    useState<AchievementStatus>("active");
 
-  const achievements = useMemo(
-    () => archiveFromVisual(character.visual, visualHistory),
+  const stages = useMemo(
+    () => stageProgress(character.visual, visualHistory),
     [character.visual, visualHistory]
   );
+  const wardrobe = useMemo(
+    () => outfitWardrobe(character.visual, visualHistory),
+    [character.visual, visualHistory]
+  );
+  const currentStageLabel = useMemo(() => {
+    const cur = stages.find((s) => s.current);
+    return cur ? t(cur.titleKey) : t(STAGE_META.sprout.titleKey);
+  }, [stages, t]);
   const hiddenTraits = useMemo(() => hiddenTraitsFromEggs(eggs), [eggs]);
 
   return (
@@ -290,62 +321,101 @@ export default function ProfileScreen() {
             </View>
           </ThemedView>
 
-          {/* ── 成就档案：横滑预览 + 查看全部 ─────────────────────── */}
+          {/* ── 成长阶段：3 stage 进度线 ──────────────────────────── */}
           <ThemedView type="backgroundElement" style={styles.card}>
             <View style={styles.cardHeaderRow}>
               <View style={styles.flexOne}>
                 <ThemedText type="subtitle">
-                  {t("profile.achievements.title")}
+                  {t("profile.stageProgress.title")}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {t("profile.achievements.summary", {
-                    active: achievements.filter((v) => v.status === "active").length,
-                    fading: achievements.filter((v) => v.status === "fading").length,
-                    sleeping: achievements.filter((v) => v.status === "sleeping").length,
+                  {t("profile.stageProgress.summary", {
+                    stage: currentStageLabel,
                   })}
                 </ThemedText>
               </View>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => setArchiveModalVisible(true)}
-              >
-                <ThemedText type="smallBold" style={styles.viewAllLink}>
-                  {t("profile.common.viewAll")}
-                </ThemedText>
-              </TouchableOpacity>
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.archivePreviewRow}
-            >
-              {achievements.map((item) => (
+            <View style={styles.stageRow}>
+              {stages.map((s, idx) => (
+                <View key={s.stage} style={styles.stageItemWrap}>
+                  <View
+                    style={[
+                      styles.stageDot,
+                      s.visited && styles.stageDotVisited,
+                      s.current && styles.stageDotCurrent,
+                    ]}
+                  >
+                    <ThemedText style={styles.stageDotEmoji}>
+                      {s.emoji}
+                    </ThemedText>
+                  </View>
+                  <ThemedText
+                    type="smallBold"
+                    style={s.current ? styles.stageLabelCurrent : undefined}
+                  >
+                    {t(s.titleKey)}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {s.current
+                      ? t("profile.stageProgress.current")
+                      : s.visited
+                        ? t("profile.stageProgress.passed")
+                        : t("profile.stageProgress.future")}
+                  </ThemedText>
+                  {idx < stages.length - 1 && (
+                    <View
+                      style={[
+                        styles.stageConnector,
+                        stages[idx + 1].visited && styles.stageConnectorActive,
+                      ]}
+                    />
+                  )}
+                </View>
+              ))}
+            </View>
+          </ThemedView>
+
+          {/* ── 形象库：3 outfit 卡 ──────────────────────────────── */}
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <View style={styles.flexOne}>
+              <ThemedText type="subtitle">
+                {t("profile.wardrobe.title")}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("profile.wardrobe.subtitle")}
+              </ThemedText>
+            </View>
+            <View style={styles.wardrobeRow}>
+              {wardrobe.map((o) => (
                 <ThemedView
-                  key={item.id}
+                  key={o.outfit}
                   type="backgroundSelected"
                   style={[
-                    styles.archivePreviewCard,
-                    item.status === "active" && styles.archivePreviewActive,
-                    item.status === "fading" && styles.archivePreviewFading,
-                    item.status === "sleeping" && styles.archivePreviewSleeping,
+                    styles.wardrobeCard,
+                    o.status === "current" && styles.wardrobeCardCurrent,
+                    o.status === "locked" && styles.wardrobeCardLocked,
                   ]}
                 >
-                  <ThemedText style={styles.archivePreviewIcon}>
-                    {item.icon}
+                  <ThemedText style={styles.wardrobeIcon}>
+                    {o.status === "locked" ? "✦" : o.emoji}
                   </ThemedText>
                   <ThemedText type="smallBold" numberOfLines={1}>
-                    {t(item.titleKey)}
+                    {t(o.titleKey)}
                   </ThemedText>
                   <ThemedText
                     type="small"
                     themeColor="textSecondary"
-                    numberOfLines={2}
+                    style={
+                      o.status === "current"
+                        ? styles.wardrobeStatusCurrent
+                        : undefined
+                    }
                   >
-                    {t(`profile.achievements.${item.status}` as StringKey)}
+                    {t(`profile.wardrobe.${o.status}` as StringKey)}
                   </ThemedText>
                 </ThemedView>
               ))}
-            </ScrollView>
+            </View>
           </ThemedView>
 
           {/* ── 隐藏特质：解锁的成卡 + 未解锁的 ✦ 悬念卡 ───────── */}
@@ -393,13 +463,6 @@ export default function ProfileScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <ArchiveModal
-        visible={archiveModalVisible}
-        onClose={() => setArchiveModalVisible(false)}
-        archiveFilter={archiveFilter}
-        setArchiveFilter={setArchiveFilter}
-        achievements={achievements}
-      />
       <SettingsModal
         visible={settingsModalVisible}
         onClose={() => setSettingsModalVisible(false)}
@@ -410,69 +473,6 @@ export default function ProfileScreen() {
         resetToSeed={resetToSeed}
       />
     </ThemedView>
-  );
-}
-
-function ArchiveModal({
-  visible,
-  onClose,
-  archiveFilter,
-  setArchiveFilter,
-  achievements,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  archiveFilter: AchievementStatus;
-  setArchiveFilter: (status: AchievementStatus) => void;
-  achievements: Achievement[];
-}) {
-  const t = useT();
-  const filtered = achievements.filter((v) => v.status === archiveFilter);
-  return (
-    <DetailModal
-      visible={visible}
-      onClose={onClose}
-      title={t("profile.achievements.title")}
-    >
-      <View style={styles.segmentRow}>
-        {(["active", "fading", "sleeping"] as const).map((status) => (
-          <TouchableOpacity
-            key={status}
-            onPress={() => setArchiveFilter(status)}
-            style={[
-              styles.segmentButton,
-              archiveFilter === status && styles.segmentButtonActive,
-            ]}
-          >
-            <ThemedText
-              type="smallBold"
-              style={archiveFilter === status && styles.segmentTextActive}
-            >
-              {t(`profile.achievements.${status}` as StringKey)}
-            </ThemedText>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.grid}>
-        {filtered.map((item) => (
-          <ThemedView
-            key={item.id}
-            type="backgroundSelected"
-            style={[
-              styles.archiveItem,
-              item.status === "fading" && styles.fadingItem,
-              item.status === "sleeping" && styles.sleepingItem,
-            ]}
-          >
-            <ThemedText style={styles.archiveIcon}>{item.icon}</ThemedText>
-            <ThemedText type="smallBold">{t(item.titleKey)}</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {t(item.detailKey)}
-            </ThemedText>
-          </ThemedView>
-        ))}
-      </View>
-    </DetailModal>
   );
 }
 
@@ -696,28 +696,78 @@ const styles = StyleSheet.create({
     color: "#7c3aed",
     paddingTop: Spacing.one,
   },
-  // ── Archive horizontal preview ─────────────────────────────────────
-  archivePreviewRow: {
-    gap: Spacing.two,
-    paddingRight: Spacing.four,
+  // ── Stage progress (3-dot horizontal track) ────────────────────────
+  stageRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.one,
   },
-  archivePreviewCard: {
-    width: 132,
+  stageItemWrap: {
+    flex: 1,
+    alignItems: "center",
+    position: "relative",
+    gap: Spacing.one,
+  },
+  stageDot: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: "rgba(0,0,0,0.12)",
+    backgroundColor: "rgba(0,0,0,0.02)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stageDotEmoji: { fontSize: 24, lineHeight: 28 },
+  stageDotVisited: {
+    backgroundColor: "rgba(124,58,237,0.10)",
+    borderColor: "rgba(124,58,237,0.35)",
+  },
+  stageDotCurrent: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  stageLabelCurrent: {
+    color: "#7c3aed",
+  },
+  stageConnector: {
+    position: "absolute",
+    top: 25,
+    right: "-50%",
+    left: "50%",
+    height: 2,
+    marginLeft: 26,
+    marginRight: 26,
+    backgroundColor: "rgba(0,0,0,0.10)",
+  },
+  stageConnectorActive: {
+    backgroundColor: "rgba(124,58,237,0.45)",
+  },
+  // ── Wardrobe (3 outfit cards) ──────────────────────────────────────
+  wardrobeRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  wardrobeCard: {
+    flex: 1,
     borderRadius: Spacing.three,
     padding: Spacing.three,
     gap: Spacing.one,
+    alignItems: "center",
+    minHeight: 110,
   },
-  archivePreviewActive: {
+  wardrobeCardCurrent: {
     borderWidth: 1.5,
     borderColor: "#7c3aed",
   },
-  archivePreviewFading: {
-    opacity: 0.7,
-    borderWidth: 1.5,
-    borderColor: "rgba(124,58,237,0.25)",
+  wardrobeCardLocked: {
+    opacity: 0.55,
   },
-  archivePreviewSleeping: {
-    opacity: 0.45,
+  wardrobeIcon: { fontSize: 30, lineHeight: 36 },
+  wardrobeStatusCurrent: {
+    color: "#7c3aed",
+    fontWeight: "700",
   },
   archivePreviewIcon: { fontSize: 28, lineHeight: 34 },
   // ── Trend rows (under growth-ring video) ───────────────────────────

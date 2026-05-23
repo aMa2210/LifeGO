@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -25,6 +25,7 @@ import { BottomTabInset, Spacing } from "@/constants/theme";
 import { useLifeGOStore } from "@/lib/store";
 import { MIA_USER } from "@/lib/fake-user";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
+import { MOOD_EMOJI, MOOD_LABEL_KEY, pruneMoods } from "@/lib/moods";
 import { useT, type StringKey } from "@/lib/i18n";
 
 function greetingKey(): StringKey {
@@ -46,11 +47,18 @@ export default function HomeScreen() {
     isReplaying,
     replayProgress,
     locale,
+    recentMoods,
   } = useLifeGOStore();
   const recommendRef = useRef<RecommendDialogHandle>(null);
   const insets = useSafeAreaInsets();
   const t = useT();
   const [editAvatarVisible, setEditAvatarVisible] = useState(false);
+
+  // Show at most 2 most-recent active stickers, top-right of the character.
+  const activeMoods = useMemo(
+    () => pruneMoods(recentMoods).slice(0, 2),
+    [recentMoods]
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -89,6 +97,21 @@ export default function HomeScreen() {
           <View style={styles.characterSlot}>
             <View style={styles.characterFrame}>
               <Character state={character} size={280} />
+              {activeMoods.length > 0 && (
+                <View pointerEvents="none" style={styles.moodOverlay}>
+                  {activeMoods.map((m) => (
+                    <View
+                      key={m.id}
+                      style={styles.moodPill}
+                      accessibilityLabel={t(MOOD_LABEL_KEY[m.id])}
+                    >
+                      <ThemedText style={styles.moodEmoji}>
+                        {MOOD_EMOJI[m.id]}
+                      </ThemedText>
+                    </View>
+                  ))}
+                </View>
+              )}
               {!initialAvatarEditUsed && (
                 <TouchableOpacity
                   accessibilityLabel={t("profile.initialAvatar.cta")}
@@ -174,6 +197,29 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280 * (4 / 3),
     position: "relative",
+  },
+  moodOverlay: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    gap: 6,
+  },
+  moodPill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.94)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  moodEmoji: {
+    fontSize: 20,
+    lineHeight: 22,
   },
   avatarEditBadge: {
     position: "absolute",
