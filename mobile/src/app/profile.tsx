@@ -194,6 +194,9 @@ export default function ProfileScreen() {
 
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [archiveModalVisible, setArchiveModalVisible] = useState(false);
+  const [archiveFilter, setArchiveFilter] =
+    useState<AchievementStatus>("active");
 
   const achievements = useMemo(
     () => archiveFromVisual(character.visual),
@@ -276,36 +279,54 @@ export default function ProfileScreen() {
             </View>
           </ThemedView>
 
-          {/* ── 成就档案：6 个形象状态，仅当前 active，其余 sleeping ─── */}
+          {/* ── 成就档案：横滑预览 + 查看全部 ─────────────────────── */}
           <ThemedView type="backgroundElement" style={styles.card}>
-            <ThemedText type="subtitle">
-              {t("profile.achievements.title")}
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {t("profile.achievements.summarySimple", {
-                active: achievements.filter((v) => v.status === "active").length,
-                total: achievements.length,
-              })}
-            </ThemedText>
-            <View style={styles.grid}>
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.flexOne}>
+                <ThemedText type="subtitle">
+                  {t("profile.achievements.title")}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t("profile.achievements.summarySimple", {
+                    active: achievements.filter((v) => v.status === "active").length,
+                    total: achievements.length,
+                  })}
+                </ThemedText>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setArchiveModalVisible(true)}
+              >
+                <ThemedText type="smallBold" style={styles.viewAllLink}>
+                  {t("profile.common.viewAll")}
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.archivePreviewRow}
+            >
               {achievements.map((item) => (
                 <ThemedView
                   key={item.id}
                   type="backgroundSelected"
                   style={[
-                    styles.archiveItem,
-                    item.status === "sleeping" && styles.sleepingItem,
+                    styles.archivePreviewCard,
+                    item.status === "active" && styles.archivePreviewActive,
+                    item.status === "sleeping" && styles.archivePreviewSleeping,
                   ]}
                 >
-                  <ThemedText style={styles.archiveIcon}>{item.icon}</ThemedText>
-                  <ThemedText type="smallBold">{t(item.titleKey)}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {t(item.detailKey)}
+                  <ThemedText style={styles.archivePreviewIcon}>
+                    {item.icon}
+                  </ThemedText>
+                  <ThemedText type="smallBold" numberOfLines={1}>
+                    {t(item.titleKey)}
                   </ThemedText>
                   <ThemedText
                     type="small"
                     themeColor="textSecondary"
-                    style={styles.archiveStatusLine}
+                    numberOfLines={2}
                   >
                     {item.status === "active"
                       ? t("profile.achievements.active")
@@ -313,14 +334,19 @@ export default function ProfileScreen() {
                   </ThemedText>
                 </ThemedView>
               ))}
-            </View>
+            </ScrollView>
           </ThemedView>
 
-          {/* ── 隐藏特质：只显示彩蛋（未解锁也展示 locked hint）────── */}
+          {/* ── 隐藏特质：解锁的成卡 + 未解锁的 ✦ 悬念卡 ───────── */}
           <ThemedView type="backgroundElement" style={styles.card}>
-            <ThemedText type="subtitle">
-              {t("profile.hiddenTraits.title")}
-            </ThemedText>
+            <View style={styles.flexOne}>
+              <ThemedText type="subtitle">
+                {t("profile.hiddenTraits.title")}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("profile.hiddenTraits.subtitle")}
+              </ThemedText>
+            </View>
             <View style={styles.traitList}>
               {hiddenTraits.map((trait) => (
                 <ThemedView
@@ -356,6 +382,13 @@ export default function ProfileScreen() {
         </ScrollView>
       </SafeAreaView>
 
+      <ArchiveModal
+        visible={archiveModalVisible}
+        onClose={() => setArchiveModalVisible(false)}
+        archiveFilter={archiveFilter}
+        setArchiveFilter={setArchiveFilter}
+        achievements={achievements}
+      />
       <SettingsModal
         visible={settingsModalVisible}
         onClose={() => setSettingsModalVisible(false)}
@@ -366,6 +399,68 @@ export default function ProfileScreen() {
         resetToSeed={resetToSeed}
       />
     </ThemedView>
+  );
+}
+
+function ArchiveModal({
+  visible,
+  onClose,
+  archiveFilter,
+  setArchiveFilter,
+  achievements,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  archiveFilter: AchievementStatus;
+  setArchiveFilter: (status: AchievementStatus) => void;
+  achievements: Achievement[];
+}) {
+  const t = useT();
+  const filtered = achievements.filter((v) => v.status === archiveFilter);
+  return (
+    <DetailModal
+      visible={visible}
+      onClose={onClose}
+      title={t("profile.achievements.title")}
+    >
+      <View style={styles.segmentRow}>
+        {(["active", "sleeping"] as const).map((status) => (
+          <TouchableOpacity
+            key={status}
+            onPress={() => setArchiveFilter(status)}
+            style={[
+              styles.segmentButton,
+              archiveFilter === status && styles.segmentButtonActive,
+            ]}
+          >
+            <ThemedText
+              type="smallBold"
+              style={archiveFilter === status && styles.segmentTextActive}
+            >
+              {t(`profile.achievements.${status}` as StringKey)}
+            </ThemedText>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.grid}>
+        {filtered.map((item) => (
+          <ThemedView
+            key={item.id}
+            type="backgroundSelected"
+            style={[
+              styles.archiveItem,
+              item.status === "sleeping" && styles.sleepingItem,
+            ]}
+          >
+            <ThemedText style={styles.archiveIcon}>{item.icon}</ThemedText>
+            <ThemedText type="smallBold">{t(item.titleKey)}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {t(item.detailKey)}
+            </ThemedText>
+          </ThemedView>
+        ))}
+      </View>
+    </DetailModal>
   );
 }
 
@@ -579,6 +674,35 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   headerCopy: { flex: 1 },
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: Spacing.three,
+  },
+  viewAllLink: {
+    color: "#7c3aed",
+    paddingTop: Spacing.one,
+  },
+  // ── Archive horizontal preview ─────────────────────────────────────
+  archivePreviewRow: {
+    gap: Spacing.two,
+    paddingRight: Spacing.four,
+  },
+  archivePreviewCard: {
+    width: 132,
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    gap: Spacing.one,
+  },
+  archivePreviewActive: {
+    borderWidth: 1.5,
+    borderColor: "#7c3aed",
+  },
+  archivePreviewSleeping: {
+    opacity: 0.5,
+  },
+  archivePreviewIcon: { fontSize: 28, lineHeight: 34 },
   // ── Trend rows (under growth-ring video) ───────────────────────────
   segmentRow: {
     flexDirection: "row",
