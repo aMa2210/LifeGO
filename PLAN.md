@@ -567,6 +567,50 @@ iPhone 16 Pro 6.9" 截图（1320×2868），3-5 张：
 
 切换后 Tab labels、问候语、Persona、推荐、所有 UI 字串瞬间双语切换。
 
+### Post-M5 产品演进（与 SDK 降级一起落地）
+
+迁回 Expo Go 路径之后做了一批黑箱原则的深化 + 视觉补完。
+
+**1. 静态地图 fallback（`components/StaticMap.tsx` 新增）**
+- Expo Go 拉不起 `@rnmapbox/maps` 的 native module，之前 Map tab 只有占位文字
+- 改用 Mapbox Static Images API（`api.mapbox.com/styles/v1/.../static/...`）拉一张 1024×1024 @2x 浅色调东京 PNG，叠上 14 个用 Web Mercator 投影计算位置的 `<Pressable>` marker
+- POI 点击仍然触发 `CheckinSheet.present()` —— 看着像真地图，交互闭环完整，只是不能 pan/zoom
+- `Map.tsx` 改成 dispatcher：`IS_EXPO_GO || !mapboxModule` → StaticMap，否则 `@rnmapbox/maps`。EAS Build dev client 路径保留以备未来升级
+
+**2. CheckinSheet 重做（2 步 UX + 黑箱权重）**
+- 用户**不再自评权重**。原来的"轻/中/重"三档让用户决定意味着把信号生成交给用户判断，违反 LifeGO 的"AI 看见你"内核
+- 新流程：
+  - 入口 2 大按钮：📍 **快速打卡**（只记录位置时间）/ ✨ **分享一下**（展开 note + 照片输入）
+  - 提交后由 `computeWeightFromContent({ note, photoUrl })` 在后台算 weight
+- 权重公式（黑箱，用户不可见）：
+  - 照片 → +2
+  - note 10-29 字 → +1，30-79 字 → +2，≥80 字 → +3
+  - 总分 ≥4 → weight 5 / ≥1 → 3 / 否则 1
+- 防作弊：要拿 +5 必须**真的**写点东西或拍张照，自评通道被关闭
+
+**3. 照片上传（`expo-image-picker`）**
+- 调起 iOS 原生相册选图（不实际上传到后端，photoUrl 保留为 `file:///` 本地 URI）
+- iOS Info.plist 加 `NSPhotoLibraryUsageDescription` 文案
+- 是否有照片直接影响第 2 条的权重计算
+
+**4. 标签字段完全去除 + Lone Wolf 彩蛋重新定义**
+- `StoredCheckin.tags` 字段移除（旧的多选 tag chip UI 一并废弃）
+- 旧 lone-wolf 规则依赖 `with-friends` tag 计算独行比例，现在没 tag 了
+- 重定义：**累计 ≥5 次"个人记录"打卡** = note ≥30 字 OR 含照片
+- 语义升级：从"没和别人一起去"变成"会为自己留下印记的人"
+- Mia seed 数据下恰好 5 次（teamLab / Omoide / Golden Gai / Tsukiji / Shimokitazawa）触发，门槛不变
+
+**5. AttributeRadar locale 化（漏改修复）**
+- `components/AttributeRadar.tsx` 之前用 `ATTRIBUTE_LABELS[k].zh` 硬编码，i18n 切英文时雷达图轴标签永远中文
+- 修：组件订阅 `store.locale`，标签按当前 locale 取
+
+**6. PersonaCard 切语言自动重新生成**
+- `useEffect(() => fetchPersona(), [fetchPersona, locale])` —— 加 locale 到依赖
+- `setLocale()` 同步清 `persona / recommendations` 缓存 → useEffect 检测到 locale 变化 → 重新调 Gemini，新 locale 的 system prompt 走起
+
+**7. 启动期预热**
+- `app/_layout.tsx` 在根布局 mount 时调一次 `fetchPersona()`，比 PersonaCard 自己的 useEffect 提前 ~1s 启动网络请求
+
 ### SDK 兼容性故事（踩坑）
 
 | 阶段 | SDK | 结果 |
@@ -579,10 +623,12 @@ iPhone 16 Pro 6.9" 截图（1320×2868），3-5 张：
 
 ### 已知 caveats
 
-- **`@rnmapbox/maps` 不能 static import in Expo Go**：会触发 native module check → crash。必须用条件 `require()` + `import type` 拿类型。`Map.tsx` 已经处理
+- **`@rnmapbox/maps` 不能 static import in Expo Go**：会触发 native module check → crash。必须用条件 `require()` + `import type` 拿类型。`Map.tsx` 已经处理；Expo Go 走 `StaticMap` fallback
 - **iPhone safe area**：3 个 screen 的 ScrollView paddingBottom 用 `BottomTabInset + useSafeAreaInsets().bottom + Spacing.four`（之前只 50pt 不够 iPhone home indicator 的 34pt）
-- **iOS dev client 要 $99 Apple Developer Program**：免费 Apple ID 在 Apple Developer Portal 注册后没有 device:create 权限。EAS Build iOS dev profile 暂时跑不通。Expo Go 走 SDK 54 路径作为替代
+- **iOS dev client 要 $99 Apple Developer Program**：免费 Apple ID 在 Apple Developer Portal 注册后没有 device:create 权限。EAS Build iOS dev profile 暂时跑不通。Expo Go + StaticMap 走 SDK 54 路径作为替代
 - **Gemini 延迟 ~10-14s** 是 server 端 first-token 决定，client 无法优化。PersonaCard 的"✨ 正在解读你……" loading state 是产品化体验
+- **照片不上传后端**：`photoUrl` 只是设备本地 URI，未做云端存储。生产化需要接 S3/Supabase
+- **Zustand 内存态**：每次 reload 重置回 Mia seed 状态。Demo 阶段是 feature（replay 干净），生产需 AsyncStorage 或后端
 
 ---
 
