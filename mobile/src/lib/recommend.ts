@@ -5,6 +5,9 @@ import type { Persona } from "./persona";
 import type { Attributes } from "./attributes";
 import type { StoredCheckin } from "./store";
 import type { Locale } from "./i18n";
+import type { FeedbackVoiceStyle } from "./initial-avatar";
+import type { ResolvedVisual } from "./character";
+import { localizeRecommendations } from "./visual-content";
 
 export type Recommendation = {
   place: string;
@@ -77,6 +80,37 @@ const MOCK_RECOMMENDATIONS_EN: Recommendation[] = [
   },
 ];
 
+const VOICE_LABEL_ZH: Record<FeedbackVoiceStyle, string> = {
+  praise: "夸夸型",
+  gentle: "温柔陪伴型",
+  game: "RPG 任务型",
+  friend: "朋友聊天型",
+  coach: "教练推动型",
+  mirror: "镜子观察型",
+};
+
+const VOICE_LABEL_EN: Record<FeedbackVoiceStyle, string> = {
+  praise: "praise-first",
+  gentle: "gentle companion",
+  game: "RPG quest",
+  friend: "close friend",
+  coach: "coach-like",
+  mirror: "reflective mirror",
+};
+
+function applyRecommendationVoice(
+  items: Recommendation[],
+  locale: Locale,
+  voiceStyle?: FeedbackVoiceStyle | null
+): Recommendation[] {
+  if (!voiceStyle) return items;
+  const prefix =
+    locale === "en"
+      ? `${VOICE_LABEL_EN[voiceStyle]}: `
+      : `${VOICE_LABEL_ZH[voiceStyle]}：`;
+  return items.map((item) => ({ ...item, why: `${prefix}${item.why}` }));
+}
+
 function timeOfDayZh(hour: number): string {
   if (hour < 6) return "深夜";
   if (hour < 11) return "上午";
@@ -128,14 +162,29 @@ export async function generateRecommendations({
   attributes,
   checkins,
   locale,
+  voiceStyle,
+  visual,
   user,
 }: {
   persona: Persona;
   attributes: Attributes;
   checkins: StoredCheckin[];
   locale: Locale;
+  voiceStyle?: FeedbackVoiceStyle | null;
+  visual?: ResolvedVisual;
   user?: { name: string; city: string };
 }): Promise<Recommendation[]> {
+  // ── Visual-pinned recommendations (3 per visual). Home character ↔
+  //     persona text ↔ "今天做什么" recs stay in lockstep. Pinned table
+  //     wins over LLM when we have a known visual.
+  if (visual && visual !== "in-development") {
+    return applyRecommendationVoice(
+      localizeRecommendations(visual, locale),
+      locale,
+      voiceStyle
+    );
+  }
+
   const city = user?.city || "Tokyo";
   const userNameLine =
     user?.name
@@ -145,7 +194,11 @@ export async function generateRecommendations({
       : "";
   if (!hasApiKey()) {
     await new Promise((r) => setTimeout(r, 500));
-    return locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH;
+    return applyRecommendationVoice(
+      locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH,
+      locale,
+      voiceStyle
+    );
   }
 
   const now = new Date();
@@ -190,9 +243,13 @@ Recommend 3 specific activity venues (real ${city} places, fresh ones).`
 为这个用户推荐 3 个具体的活动地点（${city} 真实地点，要新鲜）。`;
 
   try {
+    const voiceInstruction =
+      locale === "en"
+        ? `Voice preference: ${voiceStyle ? VOICE_LABEL_EN[voiceStyle] : "default"}`
+        : `反馈语气偏好：${voiceStyle ? VOICE_LABEL_ZH[voiceStyle] : "默认"}`;
     const raw = await llm({
       system: locale === "en" ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH,
-      user: userPrompt,
+      user: `${userPrompt}\n\n${voiceInstruction}`,
       model: "flash",
       temperature: 0.9,
       responseSchema: recommendSchema,
@@ -201,10 +258,18 @@ Recommend 3 specific activity venues (real ${city} places, fresh ones).`
     if (Array.isArray(parsed.items) && parsed.items.length > 0) {
       return parsed.items.slice(0, 3);
     }
-    return locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH;
+    return applyRecommendationVoice(
+      locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH,
+      locale,
+      voiceStyle
+    );
   } catch (err) {
     if (__DEV__)
       console.warn("generateRecommendations failed, using mock:", err);
-    return locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH;
+    return applyRecommendationVoice(
+      locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH,
+      locale,
+      voiceStyle
+    );
   }
 }

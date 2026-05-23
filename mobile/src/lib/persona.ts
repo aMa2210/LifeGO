@@ -7,6 +7,9 @@ import type { Attributes } from "./attributes";
 import type { EasterEggId } from "./easter-eggs";
 import type { StoredCheckin } from "./store";
 import type { Locale } from "./i18n";
+import type { FeedbackVoiceStyle } from "./initial-avatar";
+import type { ResolvedVisual } from "./character";
+import { localizePersona } from "./visual-content";
 
 export type Persona = {
   /** 6-12 character Chinese noun phrase (or English title in en mode). */
@@ -51,6 +54,42 @@ const MOCK_PERSONA_EN: Persona = {
     "A soul that completes itself after dark",
   ],
 };
+
+// ── User-chosen voice style (post-Q1 preference) ──────────────────────
+// Decorates the description with a short prefix so the persona "speaks" in
+// the tone the user picked during onboarding. Layered on top of the random
+// voice rotation below.
+
+const VOICE_LABEL_ZH: Record<FeedbackVoiceStyle, string> = {
+  praise: "夸夸型反馈",
+  gentle: "温柔陪伴型反馈",
+  game: "RPG 任务型反馈",
+  friend: "朋友聊天型反馈",
+  coach: "教练推动型反馈",
+  mirror: "镜子观察型反馈",
+};
+
+const VOICE_LABEL_EN: Record<FeedbackVoiceStyle, string> = {
+  praise: "praise-first",
+  gentle: "gentle companion",
+  game: "RPG quest",
+  friend: "close friend",
+  coach: "coach-like",
+  mirror: "reflective mirror",
+};
+
+function applyPersonaVoice(
+  persona: Persona,
+  locale: Locale,
+  voiceStyle?: FeedbackVoiceStyle | null
+): Persona {
+  if (!voiceStyle) return persona;
+  const prefix =
+    locale === "en"
+      ? `Voice style: ${VOICE_LABEL_EN[voiceStyle]}. `
+      : `反馈语气：${VOICE_LABEL_ZH[voiceStyle]}。`;
+  return { ...persona, description: `${prefix}${persona.description}` };
+}
 
 // ── Voice rotation ─────────────────────────────────────────────────────────
 // Each call randomly picks one. Same attribute profile → very different
@@ -184,6 +223,8 @@ export async function generatePersona({
   eggs,
   checkins,
   locale,
+  voiceStyle,
+  visual,
   user,
 }: {
   attributes: Attributes;
@@ -191,11 +232,35 @@ export async function generatePersona({
   eggs: EasterEggId[];
   checkins: StoredCheckin[];
   locale: Locale;
+  voiceStyle?: FeedbackVoiceStyle | null;
+  visual?: ResolvedVisual;
   user?: { name: string; city: string };
 }): Promise<Persona> {
+  // ── Visual-pinned hard-coded personas (one per CharacterVisual). The Home
+  //     character video and the persona text below it must stay in lockstep,
+  //     so we no longer let the LLM drift from the visual. "in-development"
+  //     and unset visuals still fall through to the legacy LLM/mock path.
+  if (visual && visual !== "in-development") {
+    const p = localizePersona(visual, locale);
+    return applyPersonaVoice(
+      {
+        title: p.title,
+        subtitle: p.subtitle,
+        description: p.description,
+        strengths: p.strengths,
+      },
+      locale,
+      voiceStyle
+    );
+  }
+
   if (!hasApiKey()) {
     await new Promise((r) => setTimeout(r, 400));
-    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
+    return applyPersonaVoice(
+      locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH,
+      locale,
+      voiceStyle
+    );
   }
 
   const recentPOIs = checkins
@@ -285,11 +350,21 @@ ${recentPOIs}
       typeof parsed.description === "string" &&
       Array.isArray(parsed.strengths)
     ) {
-      return parsed;
+      // Apply voiceStyle prefix to LLM output too, matching the other
+      // return paths.
+      return applyPersonaVoice(parsed, locale, voiceStyle);
     }
-    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
+    return applyPersonaVoice(
+      locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH,
+      locale,
+      voiceStyle
+    );
   } catch (err) {
     if (__DEV__) console.warn("generatePersona failed, using mock:", err);
-    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
+    return applyPersonaVoice(
+      locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH,
+      locale,
+      voiceStyle
+    );
   }
 }

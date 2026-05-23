@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -12,7 +12,9 @@ import {
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { Avatar } from "@/components/Avatar";
+import { Character } from "@/components/Character";
+import { DialogBubble } from "@/components/DialogBubble";
+import { InitialAvatarModal } from "@/components/InitialAvatarModal";
 import { PersonaCard } from "@/components/PersonaCard";
 import {
   RecommendDialog,
@@ -21,7 +23,9 @@ import {
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { useLifeGOStore } from "@/lib/store";
+import { MIA_USER } from "@/lib/fake-user";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
+import { MOOD_EMOJI, MOOD_LABEL_KEY, pruneMoods } from "@/lib/moods";
 import { useT, type StringKey } from "@/lib/i18n";
 
 function greetingKey(): StringKey {
@@ -36,19 +40,25 @@ function greetingKey(): StringKey {
 
 export default function HomeScreen() {
   const {
-    attributes,
+    character,
     eggs,
     checkins,
-    user,
+    initialAvatarEditUsed,
     isReplaying,
     replayProgress,
     locale,
+    recentMoods,
   } = useLifeGOStore();
   const recommendRef = useRef<RecommendDialogHandle>(null);
   const insets = useSafeAreaInsets();
   const t = useT();
+  const [editAvatarVisible, setEditAvatarVisible] = useState(false);
 
-  const isFirstRun = checkins.length === 0;
+  // Show at most 2 most-recent active stickers, top-right of the character.
+  const activeMoods = useMemo(
+    () => pruneMoods(recentMoods).slice(0, 2),
+    [recentMoods]
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -78,37 +88,44 @@ export default function HomeScreen() {
               </ThemedText>
               <ThemedText type="title">LifeGO</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {user.name}
-                {user.city ? ` · ${user.city}` : ""}
-                {" · "}
-                {checkins.length} {t("home.checkins")}
+                {MIA_USER.name} · {MIA_USER.city} · {checkins.length}{" "}
+                {t("home.checkins")}
               </ThemedText>
             </>
           )}
 
-          <View style={styles.avatarSlot}>
-            <Avatar
-              attributes={attributes}
-              eggs={eggs}
-              seed={user.seed || "mia"}
-              size={280}
-            />
+          <View style={styles.characterSlot}>
+            <View style={styles.characterFrame}>
+              <Character state={character} size={280} />
+              {activeMoods.length > 0 && (
+                <View pointerEvents="none" style={styles.moodOverlay}>
+                  {activeMoods.map((m) => (
+                    <View
+                      key={m.id}
+                      style={styles.moodPill}
+                      accessibilityLabel={t(MOOD_LABEL_KEY[m.id])}
+                    >
+                      <ThemedText style={styles.moodEmoji}>
+                        {MOOD_EMOJI[m.id]}
+                      </ThemedText>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {!initialAvatarEditUsed && (
+                <TouchableOpacity
+                  accessibilityLabel={t("profile.initialAvatar.cta")}
+                  activeOpacity={0.85}
+                  onPress={() => setEditAvatarVisible(true)}
+                  style={styles.avatarEditBadge}
+                >
+                  <ThemedText style={styles.avatarEditIcon}>✎</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          {isFirstRun && !isReplaying && (
-            <ThemedView type="backgroundElement" style={styles.emptyCard}>
-              <ThemedText style={styles.emptyTitle}>
-                {t("home.empty.title")}
-              </ThemedText>
-              <ThemedText
-                type="small"
-                themeColor="textSecondary"
-                style={styles.emptyDesc}
-              >
-                {t("home.empty.desc")}
-              </ThemedText>
-            </ThemedView>
-          )}
+          <DialogBubble />
 
           <View style={styles.eggsRow}>
             {eggs.length === 0 ? (
@@ -147,6 +164,10 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       <RecommendDialog ref={recommendRef} />
+      <InitialAvatarModal
+        visible={editAvatarVisible}
+        onClose={() => setEditAvatarVisible(false)}
+      />
     </ThemedView>
   );
 }
@@ -168,9 +189,59 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   replayText: { fontWeight: "600" },
-  avatarSlot: {
+  characterSlot: {
     alignItems: "center",
     paddingVertical: Spacing.three,
+  },
+  characterFrame: {
+    width: 280,
+    height: 280 * (4 / 3),
+    position: "relative",
+  },
+  moodOverlay: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    gap: 6,
+  },
+  moodPill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.94)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  moodEmoji: {
+    fontSize: 20,
+    lineHeight: 22,
+  },
+  avatarEditBadge: {
+    position: "absolute",
+    right: 6,
+    bottom: 6,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#7c3aed",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  avatarEditIcon: {
+    color: "white",
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "700",
   },
   eggsRow: {
     flexDirection: "row",
@@ -199,12 +270,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  emptyCard: {
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
-    marginTop: Spacing.two,
-    gap: Spacing.one,
-  },
-  emptyTitle: { fontSize: 17, fontWeight: "600" },
-  emptyDesc: { lineHeight: 20 },
 });

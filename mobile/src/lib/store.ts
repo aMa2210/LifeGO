@@ -1,28 +1,36 @@
-// LifeGO client state — Zustand store, persisted to localStorage on web /
-// AsyncStorage on native (only `user`, `checkins`, `locale` survive reloads;
-// everything else is derived and recomputed on hydrate).
-//
-// Real-user mode (default): boots into an empty state and routes through
-// onboarding. Mia's seed trajectory is a sample dataset you can load from
-// Profile, not the default identity.
+// LifeGO client state — Zustand store, in-memory.
+// Initialized with Mia's seed data so first paint is consistent.
 
 import { create } from "zustand";
-
 import miaData from "../data/mia-trajectory.json";
 import {
   ATTRIBUTE_KEYS,
   EMPTY_ATTRIBUTES,
+  addDelta,
   decayedAttributes,
   peakAttributes,
   type AttributeDelta,
   type Attributes,
 } from "./attributes";
 import { POI_BY_ID, type POI } from "./tokyo-pois";
-import { computeAvatarState, type OverlayKey } from "./avatar-mapping";
 import { checkEasterEggs, type EasterEggId } from "./easter-eggs";
 import { generatePersona, type Persona } from "./persona";
 import { generateRecommendations, type Recommendation } from "./recommend";
 import type { Locale } from "./i18n";
+import {
+  EMPTY_INITIAL_ATTRIBUTES,
+  buildInitialAvatarProfile,
+  type FeedbackVoiceStyle,
+  type InitialAvatarProfile,
+} from "./initial-avatar";
+import {
+  INITIAL_CHARACTER,
+  pickVisualForUser,
+  type CharacterState,
+  type ResolvedVisual,
+} from "./character";
+import { generateDialog, type DialogEntry } from "./dialog";
+import { mergeMoods, moodsFromCheckin, pruneMoods, type Mood } from "./moods";
 
 export type StoredCheckin = {
   id: string;
@@ -37,37 +45,24 @@ export type StoredCheckin = {
 };
 
 /**
- * Min real check-ins before Gemini-generated persona is shown. Below this
- * threshold the persona prompt would be fueled only by onboarding preference
- * prefill — which is a hint, not behavioral evidence — and the LLM happily
- * invents detailed personality on thin air. Gate keeps the persona honest.
+ * Min real check-ins before Gemini-generated persona is shown. Gate keeps
+ * the persona honest — below this, the LLM has only Q1 prefill to work
+ * with and will happily invent personality on thin air.
  */
 export const PERSONA_MIN_CHECKINS = 3;
-
-export type ReplayProgress = {
-  current: number; // 1-based index into checkins
-  total: number;
-  day: number; // 1, 2, or 3
-};
 
 export type User = {
   name: string;
   /** Free-text city; "" means user skipped. Used in persona / recommend prompts. */
   city: string;
   /**
-   * Lazily resolved center (Mapbox forward geocoding of `city`). Null until
+   * Lazily-resolved center (Mapbox forward geocoding of `city`). Null until
    * Map.web.tsx runs the lookup; cached here so a page reload doesn't re-fetch.
+   * Wired by `setUserCityCoords`.
    */
   cityCoords: { lng: number; lat: number } | null;
-  /** DiceBear seed — derived from `name` at onboarding; stable across sessions. */
+  /** DiceBear seed — stable across sessions. */
   seed: string;
-  /**
-   * Onboarding prefill — added to BOTH decayed `attributes` and `attributesPeak`
-   * so the user lands with a visible starting form (not a featureless avatar)
-   * and unlocks fire at the same total values as if these points came from
-   * real check-ins. Doesn't decay.
-   */
-  onboardingBoost: Attributes;
   hasOnboarded: boolean;
 };
 
@@ -76,37 +71,87 @@ const EMPTY_USER: User = {
   city: "",
   cityCoords: null,
   seed: "",
-  onboardingBoost: { ...EMPTY_ATTRIBUTES },
   hasOnboarded: false,
+};
+
+const MIA_USER: User = {
+  name: miaData.user.name,
+  city: miaData.user.city,
+  cityCoords: { lng: 139.715, lat: 35.668 }, // Tokyo — Mia's home city
+  seed: miaData.user.seed,
+  hasOnboarded: true,
+};
+
+export type ReplayProgress = {
+  current: number; // 1-based index into checkins
+  total: number;
+  day: number; // 1, 2, or 3
+};
+
+type LegacyInitialAvatarEditSummary = {
+  archetypeId: string;
+  placeIds: string[];
+  toneId: string;
+  topAxes: string[];
+};
+
+export type InitialAvatarEditSummary = InitialAvatarProfile;
+
+/** Emitted when the current visual changes (drives the unlock toast). */
+export type VisualChangeEvent = {
+  from: ResolvedVisual;
+  to: ResolvedVisual;
 };
 
 type LifeGOState = {
   user: User;
   /**
-   * Snapshot saved when the user loads Mia's sample data so they can return
-   * to their own identity + check-ins afterwards. Null when no Mia load has
-   * happened (or after they've already switched back).
+   * Snapshot saved when the user loads Mia's sample so they can return to
+   * their own identity + check-ins afterwards. Null when no Mia load is
+   * active (or after they've switched back).
    */
   snapshotBeforeMia: {
     user: User;
     checkins: StoredCheckin[];
-    persona: Persona | null;
-    personaCheckinCount: number;
+    character: CharacterState;
+    visualHistory: ResolvedVisual[];
+    initialAvatarEditUsed: boolean;
+    initialAvatarEditSummary: InitialAvatarEditSummary | null;
+    initialAttributes: Attributes;
+    q1SnapshotAttrs: Attributes;
+    feedbackVoiceStyle: FeedbackVoiceStyle | null;
   } | null;
 
   checkins: StoredCheckin[];
-  /** Current displayed strength — decayed sum (recency-weighted) + onboardingBoost. */
+  seed: string;
+  /** Current displayed strength — decayed sum (recency-weighted) + initial baseline. */
   attributes: Attributes;
-  /** Lifetime peak — un-decayed cumulative sum + onboardingBoost. Drives unlocks. */
+  /** Lifetime peak — un-decayed cumulative sum + initial baseline. */
   attributesPeak: Attributes;
-  overlays: OverlayKey[];
   eggs: EasterEggId[];
-  recentlyUnlockedOverlays: OverlayKey[];
   recentlyUnlockedEggs: EasterEggId[];
 
+  /** Discrete pre-baked character visual state. See lib/character.ts. */
+  character: CharacterState;
+  /** Every CharacterVisual the user has been displayed as, in chronological
+   *  order, deduped. The current visual is always the last entry (when not
+   *  "in-development"). Drives the archive 3-state (active/fading/sleeping):
+   *   - active   = character.visual
+   *   - fading   = in history, but not active
+   *   - sleeping = never appeared in history
+   *  "in-development" placeholders are excluded — they're not real visuals. */
+  visualHistory: ResolvedVisual[];
+  /** Queued visual-change events to surface via UnlockToast. */
+  pendingVisualEvents: VisualChangeEvent[];
+
+  /** Short-lived mood stickers from recent check-ins. Each entry has its own
+   *  `until` timestamp; consumers should call `pruneMoods` on read. */
+  recentMoods: Mood[];
+
+  /** Per-check-in AI dialog log. Newest last. */
+  dialogLog: DialogEntry[];
+
   persona: Persona | null;
-  /** checkins.length when current cached persona was generated. */
-  personaCheckinCount: number;
   personaLoading: boolean;
   personaError: string | null;
 
@@ -120,59 +165,75 @@ type LifeGOState = {
 
   /** UI + LLM language — flips entire app between Chinese and English. */
   locale: Locale;
+  initialAvatarEditUsed: boolean;
+  initialAvatarEditSummary: InitialAvatarEditSummary | null;
+  initialAttributes: Attributes;
+  /**
+   * Snapshot of `attributes` at the moment Q1 was submitted. Visual decisions
+   * compute delta from THIS, not from `initialAttributes`. Reason: when Q1 is
+   * submitted, Mia's seed check-ins have already pushed several axes high; if
+   * we used Q1 score alone as the baseline, the delta would be huge and the
+   * visual would immediately drift away from the user's chosen archetype.
+   * With this snapshot, delta starts at 0 after Q1 and only grows from
+   * post-Q1 check-ins.
+   */
+  q1SnapshotAttrs: Attributes;
+  feedbackVoiceStyle: FeedbackVoiceStyle | null;
 
-  /** True once Zustand persist finishes loading from storage. */
+  /**
+   * True once persistence rehydrate completes. Persistence itself is not
+   * wired in this merge (deferred follow-up) — default `true` so consumers
+   * don't block on a flag that never flips.
+   */
   _hydrated: boolean;
 };
 
 type LifeGOActions = {
-  /** Complete onboarding: write user info + apply prefill boost. */
+  addCheckin: (input: Omit<StoredCheckin, "id">) => StoredCheckin;
+  clearRecent: () => void;
+  dismissVisualEvents: () => void;
+  resetToSeed: () => void;
+  fetchPersona: (force?: boolean) => Promise<void>;
+  fetchRecommendations: (force?: boolean) => Promise<void>;
+  playReplay: () => Promise<void>;
+  setLocale: (locale: Locale) => void;
+  applyInitialAvatarEdit: (
+    summary: InitialAvatarEditSummary | LegacyInitialAvatarEditSummary
+  ) => void;
+
+  // ── Real-user mode + Mia sample switch ───────────────────────────────
+  /** Complete onboarding: write user info + optional 6D prefill boost. */
   completeOnboarding: (input: {
     name: string;
     city: string;
-    prefillAttrs: Attributes;
+    prefillAttrs?: Attributes;
   }) => void;
-  /** Re-enter onboarding (wipes user info AND check-ins). */
-  resetUser: () => void;
-  /** Wipe check-ins but keep user identity + onboarding boost. */
-  clearCheckins: () => void;
-  /** Load Mia's 14-checkin sample. Snapshots current user+checkins so the
-   *  switch is reversible via restoreFromMia(). */
-  loadMiaSample: () => void;
-  /** Restore the user+checkins saved by loadMiaSample(). No-op if no snapshot. */
-  restoreFromMia: () => void;
-
-  addCheckin: (input: Omit<StoredCheckin, "id">) => StoredCheckin;
-  clearRecent: () => void;
-  fetchPersona: (force?: boolean) => Promise<void>;
-  fetchRecommendations: (force?: boolean) => Promise<void>;
-  /** Replay Mia's 14 check-ins as if they happened in real time. ~11 seconds total. */
-  playReplay: () => Promise<void>;
-  /** Switch UI + LLM language. Invalidates persona+recommendation caches. */
-  setLocale: (locale: Locale) => void;
   /** Cache geocoded city center so we don't re-fetch on every Map mount. */
   setUserCityCoords: (coords: { lng: number; lat: number } | null) => void;
+  /** Wipe everything (user identity + check-ins + character) back to onboarding. */
+  resetUser: () => void;
+  /** Wipe check-ins but keep user identity. */
+  clearCheckins: () => void;
+  /** Snapshot current state, then load Mia's 14-checkin sample (reversible). */
+  loadMiaSample: () => void;
+  /** Restore the user state saved by loadMiaSample(). No-op if no snapshot. */
+  restoreFromMia: () => void;
 };
 
 type LifeGOStore = LifeGOState & LifeGOActions;
 
-function addAttrs(a: Attributes, b: Attributes): Attributes {
-  const out = { ...EMPTY_ATTRIBUTES };
-  for (const k of ATTRIBUTE_KEYS) {
-    out[k] = (a[k] ?? 0) + (b[k] ?? 0);
-  }
-  return out;
-}
+type Recomputed = {
+  attributes: Attributes;
+  attributesPeak: Attributes;
+  eggs: EasterEggId[];
+};
 
 function recompute(
   checkins: StoredCheckin[],
-  seed: string,
-  boost: Attributes
-) {
-  const decayed = decayedAttributes(checkins);
-  const peak = peakAttributes(checkins);
-  const attributes = addAttrs(decayed, boost);
-  const attributesPeak = addAttrs(peak, boost);
+  initialAttributes: Attributes = EMPTY_INITIAL_ATTRIBUTES
+): Recomputed {
+  const attributes = addDelta(initialAttributes, decayedAttributes(checkins));
+  const attributesPeak = addDelta(initialAttributes, peakAttributes(checkins));
   const eggs = checkEasterEggs(
     checkins.map((c) => ({
       createdAt: c.timestamp,
@@ -180,15 +241,73 @@ function recompute(
       photoUrl: c.photoUrl,
     }))
   );
-  const { overlays } = computeAvatarState(attributesPeak, eggs, seed);
-  return { attributes, attributesPeak, eggs, overlays };
+  return { attributes, attributesPeak, eggs };
+}
+
+/** Compute the next character state given the current 6D + Q1 archetype.
+ *  `baselineAttrs` is the attrs snapshot at the time Q1 was submitted (so
+ *  delta = post-Q1 check-in contribution only). Sets hasSproutShapeTransition
+ *  the first time visual lands on stage-shape. */
+function nextCharacter(
+  prev: CharacterState,
+  attrs: Attributes,
+  baselineAttrs: Attributes,
+  archetypeId: string | null
+): { next: CharacterState; event?: VisualChangeEvent } {
+  const newVisual = pickVisualForUser({
+    archetypeId,
+    currentAttrs: attrs,
+    initialAttrs: baselineAttrs,
+  });
+  const visualChanged = newVisual !== prev.visual;
+  const reachedShape = newVisual === "stage-shape";
+  const next: CharacterState = {
+    visual: newVisual,
+    hasSproutShapeTransition:
+      prev.hasSproutShapeTransition || reachedShape,
+  };
+  return {
+    next,
+    event: visualChanged
+      ? { from: prev.visual, to: newVisual }
+      : undefined,
+  };
 }
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-// ── Mia sample data (for "Load sample" button in Profile) ─────────────────
-const miaSampleCheckins: StoredCheckin[] = miaData.checkins.map((c, i) => {
+/** Append a visual to history if it's real (not "in-development") and not
+ *  already present. Returns the same array reference when no change, so
+ *  Zustand selectors can rely on identity equality. */
+function addToVisualHistory(
+  history: ResolvedVisual[],
+  v: ResolvedVisual
+): ResolvedVisual[] {
+  if (v === "in-development") return history;
+  if (history.includes(v)) return history;
+  return [...history, v];
+}
+
+function seedFromInitialAvatarEdit(summary: InitialAvatarEditSummary): string {
+  return `${miaData.user.seed}-${summary.archetypeId}-${summary.toneId}`;
+}
+
+function resolveInitialAvatarProfile(
+  summary: InitialAvatarEditSummary | LegacyInitialAvatarEditSummary
+): InitialAvatarEditSummary {
+  if ("initialAttributes" in summary && "voiceStyle" in summary) {
+    return summary;
+  }
+  return buildInitialAvatarProfile({
+    archetypeId: summary.archetypeId,
+    placeIds: summary.placeIds,
+    toneId: summary.toneId,
+  });
+}
+
+// ── Initial state from Mia's seed JSON ────────────────────────────────────
+const initialCheckins: StoredCheckin[] = miaData.checkins.map((c, i) => {
   const poi = POI_BY_ID[c.poiId];
   if (!poi) throw new Error(`Unknown POI in mia-trajectory.json: ${c.poiId}`);
   return {
@@ -203,480 +322,536 @@ const miaSampleCheckins: StoredCheckin[] = miaData.checkins.map((c, i) => {
   };
 });
 
-const MIA_USER: User = {
-  name: miaData.user.name,
-  city: miaData.user.city,
-  cityCoords: { lng: 139.715, lat: 35.668 }, // Tokyo — Mia's home city
-  seed: miaData.user.seed,
-  onboardingBoost: { ...EMPTY_ATTRIBUTES },
-  hasOnboarded: true,
-};
-
-// ── Hand-rolled persistence (avoids zustand/middleware which uses
-//    import.meta.env — Metro can't transpile that in the web bundle). We
-//    persist user/checkins/locale to localStorage on web; native runs
-//    ephemerally (Expo Go reload loses state anyway, fine for dev). ────────
-const STORAGE_KEY = "lifego-store-v1";
-
-const hasWindow =
-  typeof window !== "undefined" && typeof window.localStorage !== "undefined";
-
-type PersistedShape = {
-  user: User;
-  checkins: StoredCheckin[];
-  locale: Locale;
-  /**
-   * Cached persona. Persisted so a page reload doesn't re-call Gemini and
-   * surface a different "personality" each time. The matching `personaCheckinCount`
-   * is the signature: if checkins.length grows past it, the cache is stale and
-   * fetchPersona() regenerates. Explicit invalidations: setLocale, resetUser,
-   * loadMiaSample, clearCheckins, long-press refresh.
-   */
-  persona: Persona | null;
-  personaCheckinCount: number;
-  /** Snapshot taken when entering Mia mode — persisted so reload preserves the return path. */
-  snapshotBeforeMia: LifeGOState["snapshotBeforeMia"];
-};
-
-function loadPersisted(): PersistedShape | null {
-  if (!hasWindow) return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<PersistedShape>;
-    return {
-      user: { ...EMPTY_USER, ...(parsed.user ?? {}) },
-      checkins: parsed.checkins ?? [],
-      locale: parsed.locale ?? "zh",
-      persona: parsed.persona ?? null,
-      personaCheckinCount: parsed.personaCheckinCount ?? 0,
-      snapshotBeforeMia: parsed.snapshotBeforeMia ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function savePersisted(s: PersistedShape) {
-  if (!hasWindow) return;
-  try {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        user: s.user,
-        checkins: s.checkins,
-        locale: s.locale,
-        persona: s.persona,
-        personaCheckinCount: s.personaCheckinCount,
-        snapshotBeforeMia: s.snapshotBeforeMia,
-      })
-    );
-  } catch {
-    // localStorage quota / disabled — silently ignore (no persistence is OK).
-  }
-}
-
-// ── Store ─────────────────────────────────────────────────────────────────
-// Synchronous hydration: read localStorage BEFORE create() so the store's
-// initial state already reflects persisted data — no async flicker, no
-// "not hydrated yet" placeholder timing window.
-const persisted = loadPersisted();
-const initialUser = persisted?.user ?? EMPTY_USER;
-const initialCheckins = persisted?.checkins ?? [];
-const initialLocale = persisted?.locale ?? "zh";
-const initialPersona = persisted?.persona ?? null;
-const initialPersonaCheckinCount = persisted?.personaCheckinCount ?? 0;
-const initialRecompute = recompute(
-  initialCheckins,
-  initialUser.seed,
-  initialUser.onboardingBoost
+const initial = recompute(initialCheckins);
+// No Q1 chosen yet → visual stays at sprout regardless of seed attrs.
+// Baseline matches current attrs (delta == 0) so no spurious shifts.
+const initialChar = nextCharacter(
+  INITIAL_CHARACTER,
+  initial.attributes,
+  initial.attributes,
+  null
 );
 
-export const useLifeGOStore = create<LifeGOStore>()((set, get) => ({
-      user: initialUser,
-      snapshotBeforeMia: persisted?.snapshotBeforeMia ?? null,
+// ── Store ─────────────────────────────────────────────────────────────────
+export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
+  // Default boot: Mia's identity + her 14-checkin trajectory (so the demo
+  // looks right on first launch). Real onboarding (boot to EMPTY_USER then
+  // gate on hasOnboarded) is a follow-up — needs persistence first.
+  user: MIA_USER,
+  snapshotBeforeMia: null,
+  _hydrated: true,
+  checkins: initialCheckins,
+  seed: miaData.user.seed,
+  attributes: initial.attributes,
+  attributesPeak: initial.attributesPeak,
+  eggs: initial.eggs,
+  recentlyUnlockedEggs: [],
 
+  character: initialChar.next,
+  visualHistory: addToVisualHistory([], initialChar.next.visual),
+  pendingVisualEvents: [],
+  recentMoods: [],
+  dialogLog: [],
+
+  persona: null,
+  personaLoading: false,
+  personaError: null,
+
+  recommendations: null,
+  recommendationsLoading: false,
+  recommendationsError: null,
+
+  isReplaying: false,
+  replayProgress: null,
+  locale: "zh",
+  initialAvatarEditUsed: false,
+  initialAvatarEditSummary: null,
+  initialAttributes: { ...EMPTY_INITIAL_ATTRIBUTES },
+  q1SnapshotAttrs: initial.attributes,
+  feedbackVoiceStyle: null,
+
+  addCheckin: (input) => {
+    const id = `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const newCheckin: StoredCheckin = { id, ...input };
+    const prev = get();
+    const nextCheckins = [...prev.checkins, newCheckin];
+    const r = recompute(nextCheckins, prev.initialAttributes);
+    const archetypeId = prev.initialAvatarEditSummary?.archetypeId ?? null;
+    const { next: nextChar, event } = nextCharacter(
+      prev.character,
+      r.attributes,
+      prev.q1SnapshotAttrs,
+      archetypeId
+    );
+
+    const newEggs = r.eggs.filter((e) => !prev.eggs.includes(e));
+
+    const now = Date.now();
+    const fresh = moodsFromCheckin({
+      category: newCheckin.poi.category,
+      timestamp: newCheckin.timestamp,
+      nowMs: now,
+    });
+    const nextMoods = mergeMoods(prev.recentMoods, fresh, now);
+
+    set({
+      checkins: nextCheckins,
+      attributes: r.attributes,
+      attributesPeak: r.attributesPeak,
+      eggs: r.eggs,
+      recentlyUnlockedEggs: newEggs,
+      character: nextChar,
+      visualHistory: addToVisualHistory(prev.visualHistory, nextChar.visual),
+      pendingVisualEvents: event
+        ? [...prev.pendingVisualEvents, event]
+        : prev.pendingVisualEvents,
+      recentMoods: nextMoods,
+      // Invalidate visual-tied content if the visual changed.
+      ...(event
+        ? { persona: null, recommendations: null }
+        : { recommendations: null }),
+    });
+
+    // Fire-and-forget AI dialog.
+    (async () => {
+      const before = get();
+      const text = await generateDialog({
+        checkin: newCheckin,
+        attrs: before.attributes,
+        voiceStyle: before.feedbackVoiceStyle,
+        history: before.dialogLog,
+        locale: before.locale,
+      });
+      const entry: DialogEntry = {
+        id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        checkinId: newCheckin.id,
+        text,
+        voiceStyle: before.feedbackVoiceStyle,
+        locale: before.locale,
+        timestamp: Date.now(),
+      };
+      set((s) => ({ dialogLog: [...s.dialogLog, entry] }));
+    })();
+
+    return newCheckin;
+  },
+
+  clearRecent: () => set({ recentlyUnlockedEggs: [] }),
+
+  dismissVisualEvents: () => set({ pendingVisualEvents: [] }),
+
+  resetToSeed: () => {
+    const prev = get();
+    const seed = prev.initialAvatarEditSummary
+      ? seedFromInitialAvatarEdit(prev.initialAvatarEditSummary)
+      : miaData.user.seed;
+    const r = recompute(initialCheckins, prev.initialAttributes);
+    const archetypeId = prev.initialAvatarEditSummary?.archetypeId ?? null;
+    // Reset transitions: start from INITIAL_CHARACTER so the change.mp4 flag
+    // can re-trigger if user re-enters shape.
+    // Baseline snaps to the seed-replenished attrs so delta == 0 right after reset.
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      r.attributes,
+      r.attributes,
+      archetypeId
+    );
+    set({
       checkins: initialCheckins,
-      attributes: initialRecompute.attributes,
-      attributesPeak: initialRecompute.attributesPeak,
-      overlays: initialRecompute.overlays,
-      eggs: initialRecompute.eggs,
-      recentlyUnlockedOverlays: [],
+      seed,
+      attributes: r.attributes,
+      attributesPeak: r.attributesPeak,
+      eggs: r.eggs,
       recentlyUnlockedEggs: [],
-
-      persona: initialPersona,
-      personaCheckinCount: initialPersonaCheckinCount,
-      personaLoading: false,
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      recentMoods: [],
+      dialogLog: [],
+      q1SnapshotAttrs: r.attributes,
+      persona: null,
       personaError: null,
-
       recommendations: null,
-      recommendationsLoading: false,
       recommendationsError: null,
-
       isReplaying: false,
       replayProgress: null,
-      locale: initialLocale,
-      // Always true now — hydration happens synchronously before create() runs.
-      _hydrated: true,
-
-      completeOnboarding: ({ name, city, prefillAttrs }) => {
-        // Seed derived from name + timestamp so two users named "Alex" get
-        // visually different starting avatars but the same person stays stable.
-        const seed = `${name}-${Date.now().toString(36)}`;
-        const user: User = {
-          name,
-          city,
-          cityCoords: null, // Resolved lazily by Map.web.tsx via geocoding
-          seed,
-          onboardingBoost: { ...prefillAttrs },
-          hasOnboarded: true,
-        };
-        const r = recompute([], seed, user.onboardingBoost);
-        set({
-          user,
-          checkins: [],
-          attributes: r.attributes,
-          attributesPeak: r.attributesPeak,
-          overlays: r.overlays,
-          eggs: r.eggs,
-          recentlyUnlockedOverlays: [],
-          recentlyUnlockedEggs: [],
-          persona: null,
-          personaCheckinCount: 0,
-          personaError: null,
-          recommendations: null,
-          recommendationsError: null,
-        });
-      },
-
-      resetUser: () => {
-        set({
-          user: EMPTY_USER,
-          snapshotBeforeMia: null,
-          checkins: [],
-          attributes: { ...EMPTY_ATTRIBUTES },
-          attributesPeak: { ...EMPTY_ATTRIBUTES },
-          overlays: [],
-          eggs: [],
-          recentlyUnlockedOverlays: [],
-          recentlyUnlockedEggs: [],
-          persona: null,
-          personaCheckinCount: 0,
-          personaError: null,
-          recommendations: null,
-          recommendationsError: null,
-          isReplaying: false,
-          replayProgress: null,
-        });
-      },
-
-      clearCheckins: () => {
-        const { user } = get();
-        const r = recompute([], user.seed, user.onboardingBoost);
-        set({
-          checkins: [],
-          attributes: r.attributes,
-          attributesPeak: r.attributesPeak,
-          overlays: r.overlays,
-          eggs: r.eggs,
-          recentlyUnlockedOverlays: [],
-          recentlyUnlockedEggs: [],
-          persona: null,
-          personaCheckinCount: 0,
-          personaError: null,
-          recommendations: null,
-          recommendationsError: null,
-        });
-      },
-
-      loadMiaSample: () => {
-        const prev = get();
-        // Snapshot the current identity so the user can switch back via
-        // restoreFromMia(). Skip if we're already in Mia mode (don't overwrite
-        // the original snapshot with another Mia snapshot).
-        const snapshot =
-          prev.user.seed === MIA_USER.seed
-            ? prev.snapshotBeforeMia
-            : {
-                user: prev.user,
-                checkins: prev.checkins,
-                persona: prev.persona,
-                personaCheckinCount: prev.personaCheckinCount,
-              };
-        const r = recompute(
-          miaSampleCheckins,
-          MIA_USER.seed,
-          MIA_USER.onboardingBoost
-        );
-        set({
-          user: MIA_USER,
-          snapshotBeforeMia: snapshot,
-          checkins: miaSampleCheckins,
-          attributes: r.attributes,
-          attributesPeak: r.attributesPeak,
-          overlays: r.overlays,
-          eggs: r.eggs,
-          recentlyUnlockedOverlays: [],
-          recentlyUnlockedEggs: [],
-          persona: null,
-          personaCheckinCount: 0,
-          personaError: null,
-          recommendations: null,
-          recommendationsError: null,
-        });
-      },
-
-      restoreFromMia: () => {
-        const { snapshotBeforeMia } = get();
-        if (!snapshotBeforeMia) return;
-        const r = recompute(
-          snapshotBeforeMia.checkins,
-          snapshotBeforeMia.user.seed,
-          snapshotBeforeMia.user.onboardingBoost
-        );
-        set({
-          user: snapshotBeforeMia.user,
-          checkins: snapshotBeforeMia.checkins,
-          snapshotBeforeMia: null,
-          attributes: r.attributes,
-          attributesPeak: r.attributesPeak,
-          overlays: r.overlays,
-          eggs: r.eggs,
-          recentlyUnlockedOverlays: [],
-          recentlyUnlockedEggs: [],
-          persona: snapshotBeforeMia.persona,
-          personaCheckinCount: snapshotBeforeMia.personaCheckinCount,
-          personaError: null,
-          recommendations: null,
-          recommendationsError: null,
-        });
-      },
-
-      addCheckin: (input) => {
-        const id = `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const newCheckin: StoredCheckin = { id, ...input };
-        const prev = get();
-        const nextCheckins = [...prev.checkins, newCheckin];
-        const r = recompute(
-          nextCheckins,
-          prev.user.seed,
-          prev.user.onboardingBoost
-        );
-
-        const newOverlays = r.overlays.filter((o) => !prev.overlays.includes(o));
-        const newEggs = r.eggs.filter((e) => !prev.eggs.includes(e));
-
-        set({
-          checkins: nextCheckins,
-          attributes: r.attributes,
-          attributesPeak: r.attributesPeak,
-          overlays: r.overlays,
-          eggs: r.eggs,
-          recentlyUnlockedOverlays: newOverlays,
-          recentlyUnlockedEggs: newEggs,
-          recommendations: null,
-        });
-
-        // Preheat persona right when the threshold is crossed, so the
-        // PersonaCard already has data the moment the user navigates Home.
-        if (
-          prev.checkins.length < PERSONA_MIN_CHECKINS &&
-          nextCheckins.length >= PERSONA_MIN_CHECKINS
-        ) {
-          void get().fetchPersona();
-        }
-
-        return newCheckin;
-      },
-
-      clearRecent: () =>
-        set({ recentlyUnlockedOverlays: [], recentlyUnlockedEggs: [] }),
-
-      fetchPersona: async (force = false) => {
-        const state = get();
-        if (!state.user.hasOnboarded) return; // No identity yet → no persona
-        // Don't ask the LLM for a personality when there's no real behavioral
-        // evidence. Onboarding boost alone produces fabricated certainty.
-        if (state.checkins.length < PERSONA_MIN_CHECKINS) return;
-        if (state.personaLoading) return;
-        // Cache hit: have a persona AND no new check-ins since it was generated.
-        // Avoids re-calling Gemini on every page reload (LLM is stochastic, so
-        // re-calling would surface a different "personality" each refresh).
-        if (
-          state.persona &&
-          state.personaCheckinCount === state.checkins.length &&
-          !force
-        ) {
-          return;
-        }
-        set({ personaLoading: true, personaError: null });
-        try {
-          const persona = await generatePersona({
-            attributes: state.attributes,
-            attributesPeak: state.attributesPeak,
-            eggs: state.eggs,
-            checkins: state.checkins,
-            locale: state.locale,
-            user: { name: state.user.name, city: state.user.city },
-          });
-          set({
-            persona,
-            personaCheckinCount: state.checkins.length,
-            personaLoading: false,
-          });
-        } catch (err) {
-          set({
-            personaError: err instanceof Error ? err.message : String(err),
-            personaLoading: false,
-          });
-        }
-      },
-
-      fetchRecommendations: async (force = false) => {
-        const state = get();
-        if (!state.user.hasOnboarded) return;
-        if (state.recommendationsLoading) return;
-        if (state.recommendations && !force) return;
-        let persona = state.persona;
-        if (!persona) {
-          await get().fetchPersona();
-          persona = get().persona;
-          if (!persona) {
-            set({ recommendationsError: "Persona unavailable" });
-            return;
-          }
-        }
-        set({ recommendationsLoading: true, recommendationsError: null });
-        try {
-          const recommendations = await generateRecommendations({
-            persona,
-            attributes: state.attributes,
-            checkins: state.checkins,
-            locale: state.locale,
-            user: { name: state.user.name, city: state.user.city },
-          });
-          set({ recommendations, recommendationsLoading: false });
-        } catch (err) {
-          set({
-            recommendationsError: err instanceof Error ? err.message : String(err),
-            recommendationsLoading: false,
-          });
-        }
-      },
-
-      playReplay: async () => {
-        // Replay always shows Mia's identity (replay is a demo mechanic).
-        // Save current user so the demo doesn't permanently overwrite real
-        // user state — but for now we keep it simple and treat replay as
-        // "switch to Mia sample with animation".
-        const seed = MIA_USER.seed;
-        const boost = MIA_USER.onboardingBoost;
-        set({
-          user: MIA_USER,
-          checkins: [],
-          attributes: { ...EMPTY_ATTRIBUTES },
-          attributesPeak: { ...EMPTY_ATTRIBUTES },
-          overlays: [],
-          eggs: [],
-          recentlyUnlockedOverlays: [],
-          recentlyUnlockedEggs: [],
-          isReplaying: true,
-          replayProgress: {
-            current: 0,
-            total: miaSampleCheckins.length,
-            day: 0,
-          },
-        });
-
-        await sleep(800);
-
-        for (let i = 0; i < miaSampleCheckins.length; i++) {
-          const c = miaSampleCheckins[i];
-          const day = parseInt(c.timestamp.slice(8, 10), 10) - 19;
-
-          set((state) => {
-            const next = [...state.checkins, c];
-            const r = recompute(next, seed, boost);
-            return {
-              checkins: next,
-              attributes: r.attributes,
-              attributesPeak: r.attributesPeak,
-              overlays: r.overlays,
-              eggs: r.eggs,
-              replayProgress: {
-                current: i + 1,
-                total: miaSampleCheckins.length,
-                day,
-              },
-            };
-          });
-
-          const nextC = miaSampleCheckins[i + 1];
-          const isDayBoundary =
-            !!nextC && nextC.timestamp.slice(8, 10) !== c.timestamp.slice(8, 10);
-          await sleep(isDayBoundary ? 1200 : 550);
-        }
-
-        const final = get();
-        set({
-          recentlyUnlockedOverlays: final.overlays,
-          recentlyUnlockedEggs: final.eggs,
-          isReplaying: false,
-          replayProgress: null,
-        });
-      },
-
-      setLocale: (locale) => {
-        set({
-          locale,
-          persona: null,
-          personaCheckinCount: 0,
-          personaError: null,
-          recommendations: null,
-          recommendationsError: null,
-        });
-      },
-
-      setUserCityCoords: (coords) => {
-        const prev = get().user;
-        set({ user: { ...prev, cityCoords: coords } });
-      },
-}));
-
-// Subscribe once: any time the persisted slice changes, write it back to
-// localStorage. Reads happen synchronously via loadPersisted() at module load.
-if (hasWindow) {
-  let prevSnapshot = JSON.stringify({
-    user: initialUser,
-    checkins: initialCheckins,
-    locale: initialLocale,
-    persona: initialPersona,
-    personaCheckinCount: initialPersonaCheckinCount,
-    snapshotBeforeMia: persisted?.snapshotBeforeMia ?? null,
-  });
-  useLifeGOStore.subscribe((state) => {
-    const next = JSON.stringify({
-      user: state.user,
-      checkins: state.checkins,
-      locale: state.locale,
-      persona: state.persona,
-      personaCheckinCount: state.personaCheckinCount,
-      snapshotBeforeMia: state.snapshotBeforeMia,
     });
-    if (next !== prevSnapshot) {
-      prevSnapshot = next;
-      savePersisted({
-        user: state.user,
+  },
+
+  fetchPersona: async (force = false) => {
+    const state = get();
+    if (state.personaLoading) return;
+    if (state.persona && !force) return;
+    set({ personaLoading: true, personaError: null });
+    try {
+      const persona = await generatePersona({
+        attributes: state.attributes,
+        attributesPeak: state.attributesPeak,
+        eggs: state.eggs,
         checkins: state.checkins,
         locale: state.locale,
-        persona: state.persona,
-        personaCheckinCount: state.personaCheckinCount,
-        snapshotBeforeMia: state.snapshotBeforeMia,
+        voiceStyle: state.feedbackVoiceStyle,
+        visual: state.character.visual,
+      });
+      set({ persona, personaLoading: false });
+    } catch (err) {
+      set({
+        personaError: err instanceof Error ? err.message : String(err),
+        personaLoading: false,
       });
     }
-  });
-}
+  },
 
-// Re-export commonly needed types for components
+  fetchRecommendations: async (force = false) => {
+    const state = get();
+    if (state.recommendationsLoading) return;
+    if (state.recommendations && !force) return;
+    let persona = state.persona;
+    if (!persona) {
+      await get().fetchPersona();
+      persona = get().persona;
+      if (!persona) {
+        set({ recommendationsError: "Persona unavailable" });
+        return;
+      }
+    }
+    set({ recommendationsLoading: true, recommendationsError: null });
+    try {
+      const recommendations = await generateRecommendations({
+        persona,
+        attributes: state.attributes,
+        checkins: state.checkins,
+        locale: state.locale,
+        voiceStyle: state.feedbackVoiceStyle,
+        visual: state.character.visual,
+      });
+      set({ recommendations, recommendationsLoading: false });
+    } catch (err) {
+      set({
+        recommendationsError: err instanceof Error ? err.message : String(err),
+        recommendationsLoading: false,
+      });
+    }
+  },
+
+  playReplay: async () => {
+    const prev = get();
+    const initialAttributes = prev.initialAttributes;
+    const archetypeId = prev.initialAvatarEditSummary?.archetypeId ?? null;
+
+    // 1. Reset to empty (no toast).
+    const emptyAttrs = addDelta(initialAttributes, EMPTY_ATTRIBUTES);
+    const { next: emptyChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      emptyAttrs,
+      emptyAttrs,
+      archetypeId
+    );
+    set({
+      checkins: [],
+      attributes: emptyAttrs,
+      attributesPeak: emptyAttrs,
+      eggs: [],
+      recentlyUnlockedEggs: [],
+      character: emptyChar,
+      visualHistory: addToVisualHistory([], emptyChar.visual),
+      pendingVisualEvents: [],
+      recentMoods: [],
+      dialogLog: [],
+      // Snapshot the bottom of the replay so deltas grow as checkins play.
+      q1SnapshotAttrs: emptyAttrs,
+      isReplaying: true,
+      replayProgress: { current: 0, total: initialCheckins.length, day: 0 },
+    });
+
+    await sleep(800);
+
+    const accumulatedEvents: VisualChangeEvent[] = [];
+
+    for (let i = 0; i < initialCheckins.length; i++) {
+      const c = initialCheckins[i];
+      const day = parseInt(c.timestamp.slice(8, 10), 10) - 19;
+
+      set((state) => {
+        const next = [...state.checkins, c];
+        const r = recompute(next, initialAttributes);
+        const { next: char, event } = nextCharacter(
+          state.character,
+          r.attributes,
+          state.q1SnapshotAttrs,
+          archetypeId
+        );
+        if (event) accumulatedEvents.push(event);
+        const replayNow = Date.now();
+        const replayFresh = moodsFromCheckin({
+          category: c.poi.category,
+          timestamp: c.timestamp,
+          nowMs: replayNow,
+        });
+        return {
+          checkins: next,
+          attributes: r.attributes,
+          attributesPeak: r.attributesPeak,
+          eggs: r.eggs,
+          character: char,
+          visualHistory: addToVisualHistory(state.visualHistory, char.visual),
+          recentMoods: mergeMoods(state.recentMoods, replayFresh, replayNow),
+        };
+      });
+
+      const nextC = initialCheckins[i + 1];
+      const isDayBoundary =
+        !!nextC && nextC.timestamp.slice(8, 10) !== c.timestamp.slice(8, 10);
+      await sleep(isDayBoundary ? 1200 : 550);
+    }
+
+    const final = get();
+    set({
+      recentlyUnlockedEggs: final.eggs,
+      pendingVisualEvents: accumulatedEvents,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+
+  setLocale: (locale) => {
+    set({
+      locale,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+    });
+  },
+
+  applyInitialAvatarEdit: (summary) => {
+    const profile = resolveInitialAvatarProfile(summary);
+    const seed = seedFromInitialAvatarEdit(profile);
+    const prev = get();
+    const r = recompute(prev.checkins, profile.initialAttributes);
+    // Crucial: baselineAttrs = r.attributes (the current state right after Q1).
+    // Without this snapshot, Mia's seed check-ins would register as huge deltas
+    // and immediately override the user's chosen archetype with whichever axis
+    // her seed pushed hardest (typically aesthete → outfit-art).
+    const { next: nextChar, event } = nextCharacter(
+      INITIAL_CHARACTER,
+      r.attributes,
+      r.attributes,
+      profile.archetypeId
+    );
+    set({
+      seed,
+      attributes: r.attributes,
+      attributesPeak: r.attributesPeak,
+      eggs: r.eggs,
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: event ? [event] : [],
+      recentMoods: [],
+      initialAvatarEditUsed: true,
+      initialAvatarEditSummary: profile,
+      initialAttributes: profile.initialAttributes,
+      q1SnapshotAttrs: r.attributes,
+      feedbackVoiceStyle: profile.voiceStyle,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+    });
+  },
+
+  // ── Real-user mode + Mia sample switch ────────────────────────────────
+  completeOnboarding: ({ name, city, prefillAttrs }) => {
+    const seed = `${name || "anon"}-${Date.now().toString(36)}`;
+    // Optional 6D prefill from onboarding questions becomes the user's
+    // initial baseline — adds a starting "shape" so the avatar isn't featureless.
+    const initialAttrs = prefillAttrs
+      ? { ...prefillAttrs }
+      : { ...EMPTY_INITIAL_ATTRIBUTES };
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      initialAttrs,
+      initialAttrs,
+      null
+    );
+    set({
+      user: { name, city, cityCoords: null, seed, hasOnboarded: true },
+      snapshotBeforeMia: null,
+      checkins: [],
+      seed,
+      attributes: initialAttrs,
+      attributesPeak: initialAttrs,
+      eggs: [],
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: false,
+      initialAvatarEditSummary: null,
+      initialAttributes: initialAttrs,
+      q1SnapshotAttrs: initialAttrs,
+      feedbackVoiceStyle: null,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+    });
+  },
+
+  setUserCityCoords: (coords) => {
+    set((state) => ({ user: { ...state.user, cityCoords: coords } }));
+  },
+
+  resetUser: () => {
+    const emptyAttrs = { ...EMPTY_INITIAL_ATTRIBUTES };
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      emptyAttrs,
+      emptyAttrs,
+      null
+    );
+    set({
+      user: EMPTY_USER,
+      snapshotBeforeMia: null,
+      checkins: [],
+      seed: "",
+      attributes: emptyAttrs,
+      attributesPeak: emptyAttrs,
+      eggs: [],
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: false,
+      initialAvatarEditSummary: null,
+      initialAttributes: emptyAttrs,
+      q1SnapshotAttrs: emptyAttrs,
+      feedbackVoiceStyle: null,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+
+  clearCheckins: () => {
+    const prev = get();
+    const emptyAttrs = { ...prev.initialAttributes };
+    const archetypeId = prev.initialAvatarEditSummary?.archetypeId ?? null;
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      emptyAttrs,
+      emptyAttrs,
+      archetypeId
+    );
+    set({
+      checkins: [],
+      attributes: emptyAttrs,
+      attributesPeak: emptyAttrs,
+      eggs: [],
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      q1SnapshotAttrs: emptyAttrs,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+
+  loadMiaSample: () => {
+    const prev = get();
+    const snapshot: typeof prev.snapshotBeforeMia = {
+      user: prev.user,
+      checkins: prev.checkins,
+      character: prev.character,
+      visualHistory: prev.visualHistory,
+      initialAvatarEditUsed: prev.initialAvatarEditUsed,
+      initialAvatarEditSummary: prev.initialAvatarEditSummary,
+      initialAttributes: prev.initialAttributes,
+      q1SnapshotAttrs: prev.q1SnapshotAttrs,
+      feedbackVoiceStyle: prev.feedbackVoiceStyle,
+    };
+    const r = recompute(initialCheckins);
+    const { next: nextChar } = nextCharacter(
+      INITIAL_CHARACTER,
+      r.attributes,
+      r.attributes,
+      null
+    );
+    set({
+      user: MIA_USER,
+      snapshotBeforeMia: snapshot,
+      checkins: initialCheckins,
+      seed: miaData.user.seed,
+      attributes: r.attributes,
+      attributesPeak: r.attributesPeak,
+      eggs: r.eggs,
+      recentlyUnlockedEggs: [],
+      character: nextChar,
+      visualHistory: addToVisualHistory([], nextChar.visual),
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: false,
+      initialAvatarEditSummary: null,
+      initialAttributes: { ...EMPTY_INITIAL_ATTRIBUTES },
+      q1SnapshotAttrs: r.attributes,
+      feedbackVoiceStyle: null,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+
+  restoreFromMia: () => {
+    const prev = get();
+    if (!prev.snapshotBeforeMia) return;
+    const snap = prev.snapshotBeforeMia;
+    const r = recompute(snap.checkins, snap.initialAttributes);
+    set({
+      user: snap.user,
+      snapshotBeforeMia: null,
+      checkins: snap.checkins,
+      seed: snap.user.seed,
+      attributes: r.attributes,
+      attributesPeak: r.attributesPeak,
+      eggs: r.eggs,
+      recentlyUnlockedEggs: [],
+      character: snap.character,
+      visualHistory: snap.visualHistory,
+      pendingVisualEvents: [],
+      dialogLog: [],
+      recentMoods: [],
+      initialAvatarEditUsed: snap.initialAvatarEditUsed,
+      initialAvatarEditSummary: snap.initialAvatarEditSummary,
+      initialAttributes: snap.initialAttributes,
+      q1SnapshotAttrs: snap.q1SnapshotAttrs,
+      feedbackVoiceStyle: snap.feedbackVoiceStyle,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
+      isReplaying: false,
+      replayProgress: null,
+    });
+  },
+}));
+
 export type { Attributes, AttributeDelta };
 export { ATTRIBUTE_KEYS };
