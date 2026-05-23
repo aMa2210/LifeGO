@@ -16,6 +16,16 @@ and gotcha catalog. Read it before non-trivial changes.
   they aren't bundled in Expo Go (`@rnmapbox/maps` is the canonical example).
   See `components/Map.tsx` for the `IS_EXPO_GO` + `import type` + `require()`
   pattern. Static `import` crashes Expo Go at module-load time.
+- **For web, runtime guards aren't enough — use a `.web.tsx` sibling.**
+  Metro's static analyzer treats `require('@rnmapbox/maps')` as a real
+  dependency even behind an `if (!IS_WEB)` guard, then tries to resolve
+  the package's web entry and crashes the bundle (e.g. `@rnmapbox/maps`'s
+  web entry imports `mapbox-gl/dist/mapbox-gl.css`, which isn't installed).
+  Solution: ship a `Foo.web.tsx` next to `Foo.tsx`. Metro picks the web
+  variant on web and never parses the native one. Canonical example:
+  `components/Map.web.tsx` (uses `react-map-gl` directly) +
+  `components/app-tabs.web.tsx` (JS `<Tabs>` since `NativeTabs` doesn't
+  exist on web).
 - **ScrollView bottom padding**: use
   `BottomTabInset + useSafeAreaInsets().bottom + Spacing.four`
   to clear both the iPhone home indicator (~34pt) and the native tab bar
@@ -44,7 +54,20 @@ shows a placeholder card since `@rnmapbox/maps` is a native module).
 
 ## Dev workflow
 
+**On iPhone (Expo Go):**
+
 - Connect iPhone to same WiFi (often via iPhone personal hotspot).
 - Add Windows firewall inbound rule for TCP 8081 (one-time admin command).
 - `npx expo start --port 8081`
 - iPhone Safari `exp://<your-windows-ip>:8081` to open in Expo Go.
+
+**In a desktop browser (UX iteration):**
+
+- `npx expo start --web --port 8085` (any free port — Windows often holds
+  8081/8082 from prior runs; if Metro complains, the orphan is usually a
+  detached `node`/`metro` process — kill via PowerShell:
+  `Get-NetTCPConnection -LocalPort 8085 -State Listen | %{ Stop-Process -Id $_.OwningProcess -Force }`).
+- Open `http://localhost:<port>`. Worktrees don't inherit `.env` — copy
+  `.env` from the main repo's `mobile/` if persona / Mapbox break.
+- Web parity is partial by design (no GPS, no native gestures); see the
+  `.web.tsx` convention above.
