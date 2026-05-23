@@ -5,23 +5,13 @@ import * as Haptics from "expo-haptics";
 
 import { useLifeGOStore } from "@/lib/store";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
-import type { OverlayKey } from "@/lib/avatar-mapping";
+import { VISUAL_META } from "@/lib/character";
 import { ThemedText } from "./themed-text";
 import { ThemedView } from "./themed-view";
 import { Spacing } from "@/constants/theme";
 import { useT, translate, type StringKey } from "@/lib/i18n";
 
 const VISIBLE_MS = 4000;
-
-const OVERLAY_LABEL_KEYS: Partial<Record<OverlayKey, StringKey>> = {
-  backpack: "overlay.backpack",
-  "explorer-hat": "overlay.explorer-hat",
-  headband: "overlay.headband",
-  sneakers: "overlay.sneakers",
-  laptop: "overlay.laptop",
-  "coffee-cup": "overlay.coffee-cup",
-  cardigan: "overlay.cardigan",
-};
 
 const EGG_DESC_KEYS: Record<string, StringKey> = {
   nocturnal: "egg.nocturnal.desc",
@@ -30,17 +20,18 @@ const EGG_DESC_KEYS: Record<string, StringKey> = {
 };
 
 export function UnlockToast() {
-  const overlays = useLifeGOStore((s) => s.recentlyUnlockedOverlays);
+  const events = useLifeGOStore((s) => s.pendingVisualEvents);
   const eggs = useLifeGOStore((s) => s.recentlyUnlockedEggs);
   const locale = useLifeGOStore((s) => s.locale);
   const clearRecent = useLifeGOStore((s) => s.clearRecent);
+  const dismissVisualEvents = useLifeGOStore((s) => s.dismissVisualEvents);
   const t = useT();
 
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-30)).current;
 
-  const hasContent = overlays.length > 0 || eggs.length > 0;
-  const isEggOnly = overlays.length === 0 && eggs.length > 0;
+  const hasContent = events.length > 0 || eggs.length > 0;
+  const isEggOnly = events.length === 0 && eggs.length > 0;
 
   useEffect(() => {
     if (!hasContent) return;
@@ -48,35 +39,22 @@ export function UnlockToast() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     Animated.parallel([
-      Animated.spring(opacity, {
-        toValue: 1,
-        useNativeDriver: true,
-        friction: 7,
-      }),
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        friction: 7,
-      }),
+      Animated.spring(opacity, { toValue: 1, useNativeDriver: true, friction: 7 }),
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, friction: 7 }),
     ]).start();
 
     const timer = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: -30,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start(() => clearRecent());
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: -30, duration: 300, useNativeDriver: true }),
+      ]).start(() => {
+        clearRecent();
+        dismissVisualEvents();
+      });
     }, VISIBLE_MS);
 
     return () => clearTimeout(timer);
-  }, [hasContent, clearRecent, opacity, translateY]);
+  }, [hasContent, clearRecent, dismissVisualEvents, opacity, translateY]);
 
   if (!hasContent) return null;
 
@@ -94,21 +72,33 @@ export function UnlockToast() {
             ]}
           >
             <ThemedText style={styles.title}>
-              {isEggOnly ? t("unlock.hiddenTrait") : t("unlock.newContent")}
+              {isEggOnly ? t("unlock.hiddenTrait") : t("unlock.visualChanged")}
             </ThemedText>
-            {overlays.length > 0 && (
-              <ThemedText type="small" style={styles.line}>
-                {t("unlock.accessoriesLabel")}
-                <ThemedText type="small" style={{ fontWeight: "500" }}>
-                  {overlays
-                    .map((k) => {
-                      const key = OVERLAY_LABEL_KEYS[k];
-                      return key ? translate(key, locale) : k;
-                    })
-                    .join(locale === "en" ? ", " : "、")}
+
+            {events.map((e, idx) => {
+              if (e.to === "in-development") {
+                return (
+                  <ThemedText key={idx} type="small" style={styles.line}>
+                    ⏳{" "}
+                    <ThemedText type="small" style={{ fontWeight: "600" }}>
+                      {t("character.inDevelopment.title")}
+                    </ThemedText>{" "}
+                    — {t("character.inDevelopment.subtitle")}
+                  </ThemedText>
+                );
+              }
+              const meta = VISUAL_META[e.to];
+              return (
+                <ThemedText key={idx} type="small" style={styles.line}>
+                  {meta.emoji}{" "}
+                  <ThemedText type="small" style={{ fontWeight: "600" }}>
+                    {t(meta.titleKey)}
+                  </ThemedText>{" "}
+                  — {t("unlock.visualSubtitle")}
                 </ThemedText>
-              </ThemedText>
-            )}
+              );
+            })}
+
             {eggs.map((id) => {
               const e = EASTER_EGG_BY_ID[id];
               const descKey = EGG_DESC_KEYS[id];

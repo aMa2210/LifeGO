@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -12,7 +12,9 @@ import {
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { Avatar } from "@/components/Avatar";
+import { Character } from "@/components/Character";
+import { DialogBubble } from "@/components/DialogBubble";
+import { InitialAvatarModal } from "@/components/InitialAvatarModal";
 import { PersonaCard } from "@/components/PersonaCard";
 import {
   RecommendDialog,
@@ -37,10 +39,10 @@ function greetingKey(): StringKey {
 
 export default function HomeScreen() {
   const {
-    attributes,
+    character,
     eggs,
     checkins,
-    seed,
+    initialAvatarEditUsed,
     isReplaying,
     replayProgress,
     locale,
@@ -48,6 +50,7 @@ export default function HomeScreen() {
   const recommendRef = useRef<RecommendDialogHandle>(null);
   const insets = useSafeAreaInsets();
   const t = useT();
+  const [editAvatarVisible, setEditAvatarVisible] = useState(false);
 
   return (
     <ThemedView style={styles.container}>
@@ -83,14 +86,23 @@ export default function HomeScreen() {
             </>
           )}
 
-          <View style={styles.avatarSlot}>
-            <Avatar
-              attributes={attributes}
-              eggs={eggs}
-              seed={seed}
-              size={280}
-            />
+          <View style={styles.characterSlot}>
+            <View style={styles.characterFrame}>
+              <Character state={character} size={280} />
+              {!initialAvatarEditUsed && (
+                <TouchableOpacity
+                  accessibilityLabel={t("profile.initialAvatar.cta")}
+                  activeOpacity={0.85}
+                  onPress={() => setEditAvatarVisible(true)}
+                  style={styles.avatarEditBadge}
+                >
+                  <ThemedText style={styles.avatarEditIcon}>✎</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+
+          <DialogBubble />
 
           <View style={styles.eggsRow}>
             {eggs.length === 0 ? (
@@ -129,6 +141,10 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       <RecommendDialog ref={recommendRef} />
+      <InitialAvatarModal
+        visible={editAvatarVisible}
+        onClose={() => setEditAvatarVisible(false)}
+      />
     </ThemedView>
   );
 }
@@ -150,9 +166,36 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   replayText: { fontWeight: "600" },
-  avatarSlot: {
+  characterSlot: {
     alignItems: "center",
     paddingVertical: Spacing.three,
+  },
+  characterFrame: {
+    width: 280,
+    height: 280 * (4 / 3),
+    position: "relative",
+  },
+  avatarEditBadge: {
+    position: "absolute",
+    right: 6,
+    bottom: 6,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#7c3aed",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  avatarEditIcon: {
+    color: "white",
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "700",
   },
   eggsRow: {
     flexDirection: "row",

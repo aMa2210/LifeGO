@@ -42,7 +42,8 @@
           }
         }
       ],
-      "@rnmapbox/maps"
+      "@rnmapbox/maps",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

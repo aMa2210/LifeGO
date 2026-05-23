@@ -9,6 +9,9 @@ import type { Attributes } from "./attributes";
 import type { EasterEggId } from "./easter-eggs";
 import type { StoredCheckin } from "./store";
 import type { Locale } from "./i18n";
+import type { FeedbackVoiceStyle } from "./initial-avatar";
+import type { ResolvedVisual } from "./character";
+import { localizePersona } from "./visual-content";
 
 export type Persona = {
   /** 6-12 character Chinese noun phrase (or English title in en mode). */
@@ -51,6 +54,37 @@ const MOCK_PERSONA_EN: Persona = {
     "A soul that completes itself after dark",
   ],
 };
+
+const VOICE_LABEL_ZH: Record<FeedbackVoiceStyle, string> = {
+  praise: "夸夸型反馈",
+  gentle: "温柔陪伴型反馈",
+  game: "RPG 任务型反馈",
+  friend: "朋友聊天型反馈",
+  coach: "教练推动型反馈",
+  mirror: "镜子观察型反馈",
+};
+
+const VOICE_LABEL_EN: Record<FeedbackVoiceStyle, string> = {
+  praise: "praise-first",
+  gentle: "gentle companion",
+  game: "RPG quest",
+  friend: "close friend",
+  coach: "coach-like",
+  mirror: "reflective mirror",
+};
+
+function applyPersonaVoice(
+  persona: Persona,
+  locale: Locale,
+  voiceStyle?: FeedbackVoiceStyle | null
+): Persona {
+  if (!voiceStyle) return persona;
+  const prefix =
+    locale === "en"
+      ? `Voice style: ${VOICE_LABEL_EN[voiceStyle]}. `
+      : `反馈语气：${VOICE_LABEL_ZH[voiceStyle]}。`;
+  return { ...persona, description: `${prefix}${persona.description}` };
+}
 
 const SYSTEM_PROMPT_ZH = `你是 LifeGO 应用的「人格解读师」—— LifeGO 是一款根据用户行为打卡数据构建 Q 版形象的应用。
 
@@ -96,16 +130,42 @@ export async function generatePersona({
   eggs,
   checkins,
   locale,
+  voiceStyle,
+  visual,
 }: {
   attributes: Attributes;
   attributesPeak: Attributes;
   eggs: EasterEggId[];
   checkins: StoredCheckin[];
   locale: Locale;
+  voiceStyle?: FeedbackVoiceStyle | null;
+  visual?: ResolvedVisual;
 }): Promise<Persona> {
+  // ── Visual-pinned hard-coded personas (one per CharacterVisual). The Home
+  //     character video and the persona text below it must stay in lockstep,
+  //     so we no longer let the LLM drift from the visual. "in-development"
+  //     and unset visuals still fall through to the legacy LLM/mock path.
+  if (visual && visual !== "in-development") {
+    const p = localizePersona(visual, locale);
+    return applyPersonaVoice(
+      {
+        title: p.title,
+        subtitle: p.subtitle,
+        description: p.description,
+        strengths: p.strengths,
+      },
+      locale,
+      voiceStyle
+    );
+  }
+
   if (!hasApiKey()) {
     await new Promise((r) => setTimeout(r, 400));
-    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
+    return applyPersonaVoice(
+      locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH,
+      locale,
+      voiceStyle
+    );
   }
 
   const recentPOIs = checkins
@@ -168,9 +228,13 @@ ${recentPOIs}
 为这个用户生成一个「类星座」的人格画像。`;
 
   try {
+    const voiceInstruction =
+      locale === "en"
+        ? `Voice preference: ${voiceStyle ? VOICE_LABEL_EN[voiceStyle] : "default"}`
+        : `反馈语气偏好：${voiceStyle ? VOICE_LABEL_ZH[voiceStyle] : "默认"}`;
     const raw = await llm({
       system: locale === "en" ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH,
-      user: userPrompt,
+      user: `${userPrompt}\n\n${voiceInstruction}`,
       model: "flash",
       temperature: 0.95,
       responseSchema: personaSchema,
@@ -183,9 +247,17 @@ ${recentPOIs}
     ) {
       return parsed;
     }
-    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
+    return applyPersonaVoice(
+      locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH,
+      locale,
+      voiceStyle
+    );
   } catch (err) {
     if (__DEV__) console.warn("generatePersona failed, using mock:", err);
-    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
+    return applyPersonaVoice(
+      locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH,
+      locale,
+      voiceStyle
+    );
   }
 }
