@@ -16,13 +16,14 @@ import { computeAvatarState, type OverlayKey } from "./avatar-mapping";
 import { checkEasterEggs, type EasterEggId } from "./easter-eggs";
 import { generatePersona, type Persona } from "./persona";
 import { generateRecommendations, type Recommendation } from "./recommend";
+import type { Locale } from "./i18n";
 
 export type StoredCheckin = {
   id: string;
   timestamp: string;
   poi: POI;
+  /** Derived from content density via computeWeightFromContent(), not user input. */
   weight: 1 | 3 | 5;
-  tags: string[];
   note?: string;
   photoUrl?: string;
   isSpecial?: boolean;
@@ -58,6 +59,9 @@ type LifeGOState = {
   /** True while a replay sequence is animating. Used by Home to swap banner. */
   isReplaying: boolean;
   replayProgress: ReplayProgress | null;
+
+  /** UI + LLM language — flips entire app between Chinese and English. */
+  locale: Locale;
 };
 
 type LifeGOActions = {
@@ -68,6 +72,8 @@ type LifeGOActions = {
   fetchRecommendations: (force?: boolean) => Promise<void>;
   /** Replay Mia's 14 check-ins as if they happened in real time. ~11 seconds total. */
   playReplay: () => Promise<void>;
+  /** Switch UI + LLM language. Invalidates persona+recommendation caches. */
+  setLocale: (locale: Locale) => void;
 };
 
 type LifeGOStore = LifeGOState & LifeGOActions;
@@ -76,7 +82,11 @@ function recompute(checkins: StoredCheckin[], seed: string) {
   const attributes = decayedAttributes(checkins);
   const attributesPeak = peakAttributes(checkins);
   const eggs = checkEasterEggs(
-    checkins.map((c) => ({ createdAt: c.timestamp, tags: c.tags }))
+    checkins.map((c) => ({
+      createdAt: c.timestamp,
+      note: c.note,
+      photoUrl: c.photoUrl,
+    }))
   );
   const { overlays } = computeAvatarState(attributesPeak, eggs, seed);
   return { attributes, attributesPeak, eggs, overlays };
@@ -94,7 +104,6 @@ const initialCheckins: StoredCheckin[] = miaData.checkins.map((c, i) => {
     timestamp: c.timestamp,
     poi,
     weight: c.weight as 1 | 3 | 5,
-    tags: c.tags ?? [],
     note: c.note,
     photoUrl: c.photoUrl,
     isSpecial: c.isSpecial ?? false,
@@ -125,6 +134,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
 
   isReplaying: false,
   replayProgress: null,
+  locale: "zh",
 
   addCheckin: (input) => {
     const id = `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -184,6 +194,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
         attributesPeak: state.attributesPeak,
         eggs: state.eggs,
         checkins: state.checkins,
+        locale: state.locale,
       });
       set({ persona, personaLoading: false });
     } catch (err) {
@@ -213,6 +224,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
         persona,
         attributes: state.attributes,
         checkins: state.checkins,
+        locale: state.locale,
       });
       set({ recommendations, recommendationsLoading: false });
     } catch (err) {
@@ -277,6 +289,18 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       recentlyUnlockedEggs: final.eggs,
       isReplaying: false,
       replayProgress: null,
+    });
+  },
+
+  setLocale: (locale) => {
+    // Switching locale invalidates any cached LLM output so the next
+    // PersonaCard / RecommendDialog regenerates in the new language.
+    set({
+      locale,
+      persona: null,
+      personaError: null,
+      recommendations: null,
+      recommendationsError: null,
     });
   },
 }));

@@ -17,6 +17,7 @@ import { ThemedView } from "./themed-view";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useLifeGOStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 export type RecommendDialogHandle = {
   present: () => void;
@@ -35,6 +36,7 @@ export const RecommendDialog = forwardRef<RecommendDialogHandle>(
     const fetchRecommendations = useLifeGOStore(
       (s) => s.fetchRecommendations
     );
+    const t = useT();
 
     const snapPoints = useMemo(() => ["80%"], []);
 
@@ -58,17 +60,19 @@ export const RecommendDialog = forwardRef<RecommendDialogHandle>(
       >
         <BottomSheetScrollView contentContainerStyle={styles.content}>
           <ThemedText type="subtitle">
-            {persona ? `${persona.title} 的今天` : "今天做什么"}
+            {persona
+              ? t("recommend.dialogTitle.withPersona", { persona: persona.title })
+              : t("recommend.dialogTitle.default")}
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            基于你最近的行为和人格画像
+            {t("recommend.subtitle")}
           </ThemedText>
 
           {loading && (
             <View style={styles.loading}>
               <ActivityIndicator />
               <ThemedText type="small" themeColor="textSecondary">
-                ✨ 正在为你挑选地方……
+                {t("recommend.loading")}
               </ThemedText>
             </View>
           )}
@@ -76,10 +80,10 @@ export const RecommendDialog = forwardRef<RecommendDialogHandle>(
           {error && !loading && (
             <ThemedView type="backgroundElement" style={styles.errorCard}>
               <ThemedText type="small" themeColor="textSecondary">
-                推荐生成失败：{error}
+                {t("recommend.errorPrefix")}{error}
               </ThemedText>
               <TouchableOpacity onPress={() => fetchRecommendations(true)}>
-                <ThemedText type="link">重试 →</ThemedText>
+                <ThemedText type="link">{t("persona.retry")}</ThemedText>
               </TouchableOpacity>
             </ThemedView>
           )}
@@ -110,7 +114,7 @@ export const RecommendDialog = forwardRef<RecommendDialogHandle>(
               onPress={() => fetchRecommendations(true)}
               style={styles.refreshButton}
             >
-              <ThemedText type="link">↻ 再来 3 条</ThemedText>
+              <ThemedText type="link">{t("recommend.refresh")}</ThemedText>
             </TouchableOpacity>
           )}
         </BottomSheetScrollView>

@@ -1,6 +1,6 @@
-// Persona generation via Gemini 2.5-pro.
-// Falls back to a hand-crafted mock when EXPO_PUBLIC_GEMINI_API_KEY is unset
-// so screens are testable without a key.
+// Persona generation via Gemini 2.5-flash.
+// Locale-aware: Chinese system prompt + zh mock when locale='zh', English
+// counterparts when locale='en'. Falls back to mock when no API key.
 
 import { SchemaType } from "@google/generative-ai";
 
@@ -8,15 +8,16 @@ import { llm, hasApiKey } from "./llm";
 import type { Attributes } from "./attributes";
 import type { EasterEggId } from "./easter-eggs";
 import type { StoredCheckin } from "./store";
+import type { Locale } from "./i18n";
 
 export type Persona = {
-  /** 6-12 character Chinese noun phrase, e.g. "探险家诗人". */
+  /** 6-12 character Chinese noun phrase (or English title in en mode). */
   title: string;
-  /** English subtitle, e.g. "The Wandering Aesthete". */
+  /** English subtitle in zh mode; tag-line in en mode. */
   subtitle: string;
-  /** 80-120 character Chinese paragraph. */
+  /** 80-120 character paragraph in the active locale. */
   description: string;
-  /** 3-5 short (4-8 char) Chinese phrases. */
+  /** 3-5 short phrases in the active locale. */
   strengths: string[];
 };
 
@@ -26,15 +27,12 @@ const personaSchema = {
     title: { type: SchemaType.STRING },
     subtitle: { type: SchemaType.STRING },
     description: { type: SchemaType.STRING },
-    strengths: {
-      type: SchemaType.ARRAY,
-      items: { type: SchemaType.STRING },
-    },
+    strengths: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
   },
   required: ["title", "subtitle", "description", "strengths"],
 };
 
-const MOCK_PERSONA: Persona = {
+const MOCK_PERSONA_ZH: Persona = {
   title: "探险家诗人",
   subtitle: "The Wandering Aesthete",
   description:
@@ -42,7 +40,19 @@ const MOCK_PERSONA: Persona = {
   strengths: ["低声细语的好奇", "对独处的甜蜜依恋", "夜晚才完整的灵魂"],
 };
 
-const SYSTEM_PROMPT = `你是 LifeGO 应用的「人格解读师」—— LifeGO 是一款根据用户行为打卡数据构建 Q 版形象的应用。
+const MOCK_PERSONA_EN: Persona = {
+  title: "The Wandering Aesthete",
+  subtitle: "Poet of Urban Margins",
+  description:
+    "You search for poetry in the creases of the city. The kind of person who'd rather walk 20 minutes to an independent café than settle for a chain. Your inspiration runs deepest at night, and solitude is where you find yourself.",
+  strengths: [
+    "Quiet, observing curiosity",
+    "A sweet dependence on solitude",
+    "A soul that completes itself after dark",
+  ],
+};
+
+const SYSTEM_PROMPT_ZH = `你是 LifeGO 应用的「人格解读师」—— LifeGO 是一款根据用户行为打卡数据构建 Q 版形象的应用。
 
 你的任务是根据用户的属性、隐藏特质和打卡历史，写一份「类星座/MBTI 风格」的人格描述。
 
@@ -61,21 +71,41 @@ const SYSTEM_PROMPT = `你是 LifeGO 应用的「人格解读师」—— LifeGO
 
 只返回 JSON。`;
 
+const SYSTEM_PROMPT_EN = `You are the "persona interpreter" for LifeGO — an app that builds a Q-version character from a user's location check-in behavior.
+
+Your task: given a user's attribute axes, hidden traits, and check-in history, write a horoscope-style or MBTI-style personality description IN ENGLISH.
+
+Voice requirements:
+- Poetic like 16personalities, but with the warmth of a friend who truly sees you.
+- Avoid clichés. NEVER use empty words like "kind", "brave", "creative" without specifics.
+- Anchor every phrase to a concrete scene, habit, or preference.
+- Output ALL fields in English. Do not include Chinese characters anywhere.
+- Do not call the user "INTJ" or any MBTI code — invent an original persona name.
+
+Field requirements:
+- title: Evocative English noun phrase, 2-4 words (e.g. "The Wandering Aesthete", "The Urban Glimmer Collector", "The Midnight Cartographer").
+- subtitle: A short tag-line in English (e.g. "Poet of Urban Margins").
+- description: 2-3 sentences in English, 50-90 words, painting a specific scene or habit.
+- strengths: 3-5 short English phrases, each 3-6 words (no clichés like "kind" — use "Quiet, observing curiosity" instead).
+
+Return JSON only.`;
+
 export async function generatePersona({
   attributes,
   attributesPeak,
   eggs,
   checkins,
+  locale,
 }: {
   attributes: Attributes;
   attributesPeak: Attributes;
   eggs: EasterEggId[];
   checkins: StoredCheckin[];
+  locale: Locale;
 }): Promise<Persona> {
   if (!hasApiKey()) {
-    // Demo mode: small artificial delay so the UI loading state is visible briefly.
     await new Promise((r) => setTimeout(r, 400));
-    return MOCK_PERSONA;
+    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
   }
 
   const recentPOIs = checkins
@@ -86,7 +116,33 @@ export async function generatePersona({
     )
     .join("\n");
 
-  const userPrompt = `用户的属性画像：
+  const userPrompt =
+    locale === "en"
+      ? `User attribute profile:
+
+Current state (30-day decay applied):
+- Explorer: ${attributes.explorer}
+- Social: ${attributes.social}
+- Athletic: ${attributes.athletic}
+- Foodie: ${attributes.foodie}
+- Aesthete: ${attributes.aesthete}
+- Productive: ${attributes.productive}
+
+Lifetime peak values:
+- Explorer: ${attributesPeak.explorer}
+- Social: ${attributesPeak.social}
+- Athletic: ${attributesPeak.athletic}
+- Foodie: ${attributesPeak.foodie}
+- Aesthete: ${attributesPeak.aesthete}
+- Productive: ${attributesPeak.productive}
+
+Unlocked hidden traits: ${eggs.length > 0 ? eggs.join(", ") : "none"}
+
+Last 10 check-ins:
+${recentPOIs}
+
+Write a horoscope-style persona for this user.`
+      : `用户的属性画像：
 
 当前状态（30天衰减后）:
 - 探索: ${attributes.explorer}
@@ -112,18 +168,14 @@ ${recentPOIs}
 为这个用户生成一个「类星座」的人格画像。`;
 
   try {
-    // gemini-2.5-flash chosen over -pro for ~4s latency reduction.
-    // Smoke test (scripts/test-persona.mjs) confirms flash @ temp 0.95
-    // produces equivalently rich + specific Chinese personas.
     const raw = await llm({
-      system: SYSTEM_PROMPT,
+      system: locale === "en" ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH,
       user: userPrompt,
       model: "flash",
       temperature: 0.95,
       responseSchema: personaSchema,
     });
     const parsed = JSON.parse(raw) as Persona;
-    // Light validation — fall back to mock if shape looks off.
     if (
       typeof parsed.title === "string" &&
       typeof parsed.description === "string" &&
@@ -131,9 +183,9 @@ ${recentPOIs}
     ) {
       return parsed;
     }
-    return MOCK_PERSONA;
+    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
   } catch (err) {
     if (__DEV__) console.warn("generatePersona failed, using mock:", err);
-    return MOCK_PERSONA;
+    return locale === "en" ? MOCK_PERSONA_EN : MOCK_PERSONA_ZH;
   }
 }

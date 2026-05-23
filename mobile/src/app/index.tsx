@@ -5,7 +5,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -20,57 +23,79 @@ import { BottomTabInset, Spacing } from "@/constants/theme";
 import { useLifeGOStore } from "@/lib/store";
 import { MIA_USER } from "@/lib/fake-user";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
+import { useT, type StringKey } from "@/lib/i18n";
 
-function greeting(): string {
+function greetingKey(): StringKey {
   const h = new Date().getHours();
-  if (h < 6) return "深夜还醒着的你";
-  if (h < 11) return "晨光里的你";
-  if (h < 14) return "正午的你";
-  if (h < 18) return "午后的你";
-  if (h < 22) return "黄昏中的你";
-  return "今天也是被看见的你";
+  if (h < 6) return "greeting.midnight";
+  if (h < 11) return "greeting.morning";
+  if (h < 14) return "greeting.noon";
+  if (h < 18) return "greeting.afternoon";
+  if (h < 22) return "greeting.dusk";
+  return "greeting.night";
 }
 
 export default function HomeScreen() {
-  const { attributes, eggs, checkins, seed, isReplaying, replayProgress } =
-    useLifeGOStore();
+  const {
+    attributes,
+    eggs,
+    checkins,
+    seed,
+    isReplaying,
+    replayProgress,
+    locale,
+  } = useLifeGOStore();
   const recommendRef = useRef<RecommendDialogHandle>(null);
+  const insets = useSafeAreaInsets();
+  const t = useT();
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: BottomTabInset + insets.bottom + Spacing.four },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {isReplaying && replayProgress ? (
             <ThemedView type="backgroundSelected" style={styles.replayBanner}>
               <ThemedText style={styles.replayText}>
-                📽️ Day {Math.max(1, replayProgress.day)} / 3 · {replayProgress.current}{" "}
-                / {replayProgress.total} check-ins
+                {t("home.replayBanner", {
+                  day: Math.max(1, replayProgress.day),
+                  current: replayProgress.current,
+                  total: replayProgress.total,
+                })}
               </ThemedText>
             </ThemedView>
           ) : (
             <>
               <ThemedText type="small" themeColor="textSecondary">
-                {greeting()}
+                {t(greetingKey())}
               </ThemedText>
               <ThemedText type="title">LifeGO</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {MIA_USER.name} · {MIA_USER.city} · {checkins.length} check-ins
+                {MIA_USER.name} · {MIA_USER.city} · {checkins.length}{" "}
+                {t("home.checkins")}
               </ThemedText>
             </>
           )}
 
           <View style={styles.avatarSlot}>
-            <Avatar attributes={attributes} eggs={eggs} seed={seed} size={280} />
+            <Avatar
+              attributes={attributes}
+              eggs={eggs}
+              seed={seed}
+              size={280}
+            />
           </View>
 
           <View style={styles.eggsRow}>
             {eggs.length === 0 ? (
               <ThemedText type="small" themeColor="textSecondary">
-                no hidden traits yet
+                {t("home.noEggs")}
               </ThemedText>
             ) : (
               eggs.map((id) => {
@@ -82,7 +107,7 @@ export default function HomeScreen() {
                     style={styles.eggPill}
                   >
                     <ThemedText type="small">
-                      {e.emoji} {e.title.zh}
+                      {e.emoji} {e.title[locale] ?? e.title.zh}
                     </ThemedText>
                   </ThemedView>
                 );
@@ -98,7 +123,7 @@ export default function HomeScreen() {
             disabled={isReplaying}
             style={[styles.ctaButton, isReplaying && styles.ctaDisabled]}
           >
-            <ThemedText style={styles.ctaText}>今天做什么 →</ThemedText>
+            <ThemedText style={styles.ctaText}>{t("home.cta")}</ThemedText>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
@@ -115,7 +140,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.four,
     gap: Spacing.two,
   },
   replayBanner: {

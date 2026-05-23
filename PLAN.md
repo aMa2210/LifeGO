@@ -440,19 +440,22 @@ Web 版（Sprint 0-2）作为**参考实现 + 业务逻辑孵化器**保留在 `
 - **调试设备**：用户自己的 iPhone（扫码连接 Expo Go）
 - **截图来源**：真 iPhone 录屏 / TestFlight，**不需要买 Mac**
 
-### Mobile 技术栈
+### Mobile 技术栈（实际版本）
 
-| 层 | 选型 | 替换自 Web 版 |
+| 层 | 选型 | 备注 |
 |---|---|---|
-| 框架 | Expo SDK 52+ | Next.js 16 |
-| 路由 | expo-router (file-based) | Next App Router |
-| 样式 | NativeWind v4 | Tailwind v4 |
-| 地图 | @rnmapbox/maps | react-map-gl/mapbox |
-| 图表 | Victory Native XL | recharts |
-| Avatar | react-native-svg + DiceBear `createAvatar()` 本地生成 | DiceBear URL 远程拉取 |
-| 状态 | Zustand（原封不动） | Zustand |
-| LLM | `@google/generative-ai`（原封不动） | 同上 |
-| Bottom Sheet | `@gorhom/bottom-sheet` | shadcn Dialog |
+| 框架 | **Expo SDK 54** (`expo@~54.0.34`) | App Store 上 Expo Go 只支持到 SDK 54，从 56 降下来 |
+| RN | React Native 0.81.5 | SDK 54 锁定 |
+| 路由 | expo-router 6.x file-based + `NativeTabs` | iOS 原生 tab bar；SF Symbols 图标 |
+| 样式 | **StyleSheet + 模板 theme**（跳过 NativeWind） | 默认 theme 已含 Colors/Spacing/BottomTabInset，更原生 |
+| 地图 | `@rnmapbox/maps`（条件 `require()`） | 静态 import 会 crash Expo Go，详见 §M0 caveats |
+| 图表 | **react-native-svg 手画**（跳过 victory-native） | 避免 Skia/Reanimated 重依赖 |
+| Avatar | `react-native-svg` 的 `<SvgXml/>` + DiceBear `createAvatar()` 本地生成 | 摆脱 dicebear.com 网络依赖 |
+| 状态 | Zustand v5 | 原封不动从 web 复用 |
+| LLM | `@google/generative-ai` (Gemini 2.5-flash) | persona + 推荐都用 flash，30× 比 pro 便宜 |
+| Bottom Sheet | `@gorhom/bottom-sheet` v5 | CheckinSheet + RecommendDialog |
+| 国际化 | 自建 `lib/i18n.ts`（50+ 字串）+ `useT()` hook | zh / en 切换，LLM prompts 同步切换 |
+| Haptic | `expo-haptics` | 打卡 / 解锁 / 切语言 |
 
 ### Mobile UX 结构
 
@@ -468,13 +471,46 @@ Web 版（Sprint 0-2）作为**参考实现 + 业务逻辑孵化器**保留在 `
 
 ### 代码复用情况
 
-100% 复用：`lib/attributes.ts` · `lib/easter-eggs.ts` · `lib/tokyo-pois.ts` · `lib/llm.ts` · `lib/store.ts` · `data/mia-trajectory.json` · `public/overlays/*.svg`
+100% 复用：`lib/attributes.ts` · `lib/easter-eggs.ts` · `lib/tokyo-pois.ts` · `lib/store.ts`（迭代加 locale/replay/persona 状态）· `data/mia-trajectory.json` · `public/overlays/*.svg`（已内联到 mobile `lib/overlay-svgs.ts`）
 
-95% 复用（覆盖 URL 构建 + overlay 坐标系）：`lib/avatar-mapping.ts`
+95% 复用（小改）：`lib/llm.ts`（env var 改 `EXPO_PUBLIC_`）· `lib/avatar-mapping.ts`（URL 改 `createAvatar()` 本地生成）
 
-0% 复用（UI 层需重写）：`app/page.tsx` · `components/*.tsx`
+0% 复用（UI 层重写）：`app/page.tsx` · `components/*.tsx`
 
-### Sprint M4 — Demo replay + EAS Build 配置（2026-05-22）
+### Sprint M0 — 项目骨架（2026-05-22）
+- `npx create-expo-app mobile --template default` → SDK 56 出来；后续因 Expo Go SDK 54 兼容性两次降级（56→55→54）
+- 3-tab `NativeTabs` (`expo-router/unstable-native-tabs`)：Home / Map / Profile，SF Symbols 图标
+- lib/* 全部迁到 `mobile/src/lib/`；overlay SVG 内联为字符串常量
+- DiceBear 切到 `createAvatar()` 本地生成（摆脱国内访问 dicebear.com 偶发慢/失败）
+- 移植 14 次 Mia seed 数据，TS 0 error
+
+### Sprint M1 — 核心可视化
+- `<Avatar/>`：`<View>` + `<SvgXml/>`（DiceBear base）+ 绝对定位 overlay 叠层
+- `<AttributeRadar/>`：纯 `react-native-svg` 原语手画 6 轴雷达（4 圈背景 + 6 轴线 + 紫色填充多边形 + 顶点圆 + 中文标签）。跳过 victory-native 省了 Skia 大依赖
+- `<Map/>`：`@rnmapbox/maps` 全屏地图 + 14 POI marker（rare 加金色 pulse 光环）
+- 三个 screen 全部接真组件
+
+### Sprint M2 — 打卡循环 + 黑箱 + 时间衰减
+两个产品哲学改动：
+1. **黑箱**：CheckinSheet 不显示 "将获得 +X +Y"；Timeline 不显示 delta 数字。打完只通过 UnlockToast 揭示解锁，保留"AI 看见你"的惊喜
+2. **30 天半衰期衰减**：`decayWeight(t, now) = 0.5^(days/30)`。`attributes` = 衰减后显示值，`attributesPeak` = 累计未衰减（驱动解锁判定 → 解锁永久保留）
+
+实现：
+- `<CheckinSheet/>` (`@gorhom/bottom-sheet`)：三档重量 + 标签 + 想法 + haptic，**无 delta 预览**
+- `<Timeline/>`：FlatList 时间倒序，POI/时间/重量 emoji/标签/想法
+- `<UnlockToast/>`：顶部 Animated 弹入 + 4s 自动消失 + haptic
+- `_layout.tsx` 包 `GestureHandlerRootView` + `BottomSheetModalProvider`
+
+### Sprint M3 — Gemini LLM 集成
+- `lib/persona.ts`：`generatePersona()` 用 gemini-2.5-flash + JSON schema + 中文 system prompt（"避免陈词滥调"、"具体到画面"、"原创人格名"）。无 key 时返回 mock
+- `lib/recommend.ts`：`generateRecommendations()` 同 flash，输入 persona + attrs + 时段 + 最近 POI，输出 3 条 `{place, area, category, why}`
+- `<PersonaCard/>`：自动 fetch + loading + 长按 0.5s 强刷
+- `<RecommendDialog/>`：bottom sheet 80%，3 卡片 + "再来 3 条"
+- Home 加紫色 "今天做什么 →" CTA
+- **关键优化**：persona 从 pro 改 flash（成本 30× 便宜，免费额度 50→1500 RPD，输出质量一致），加根布局预热 (fetchPersona in `_layout.tsx` useEffect)
+- **smoke test**：`mobile/scripts/test-persona.mjs` 独立 Node ESM 脚本验证 prompt 质量（首次跑就出 "都市浮光收集者 / The Urban Glimmer Collector"）
+
+### Sprint M4 — Demo Replay + EAS Build 配置
 
 **核心交付：Replay 功能**
 - Store 新增 `playReplay()` action + `isReplaying` 标志 + `replayProgress` 进度
@@ -519,6 +555,34 @@ iPhone 16 Pro 6.9" 截图（1320×2868），3-5 张：
 5. **Replay 演示**：Home 上 "📽️ Day 2 / 3" 进度条 + Avatar 半进化状态
 
 直接用真 iPhone 录屏截图（设置 → 通用 → 关于本机改设备名为 "iPhone 16 Pro" 等以符合 Apple 命名要求）。
+
+### Sprint M5 — 国际化（zh / en）
+
+- `lib/i18n.ts` 新建：50+ zh/en 字串对 + `useT()` hook + `translate()` 纯函数 + `{key}` 模板插值
+- Store 加 `locale` state + `setLocale()`（切换时清 persona+recommendations 缓存）
+- `lib/persona.ts` + `lib/recommend.ts` 接 locale 参数：双语 system prompt + 双语 mock fallback
+- 全部 9 个组件 + 3 个 screen 用 `useT()` 重构
+- Profile 加紫色"🌐 中文 / English"切换卡
+- PersonaCard 的 useEffect 加 locale 依赖，切换语言自动 refetch
+
+切换后 Tab labels、问候语、Persona、推荐、所有 UI 字串瞬间双语切换。
+
+### SDK 兼容性故事（踩坑）
+
+| 阶段 | SDK | 结果 |
+|---|---|---|
+| `create-expo-app@latest` 默认 | 56 | App Store Expo Go 不兼容："Project is incompatible" |
+| 第一次降级 | 55 | 仍报版本不够新 |
+| 第二次降级 | **54** | ✓ 可在 App Store Expo Go 跑 |
+
+降级要 `expo install --fix` 把所有 peer 同步；遇到 react peer 冲突用 `npm install --legacy-peer-deps`；漏装 `react-native-worklets` 要手动补。
+
+### 已知 caveats
+
+- **`@rnmapbox/maps` 不能 static import in Expo Go**：会触发 native module check → crash。必须用条件 `require()` + `import type` 拿类型。`Map.tsx` 已经处理
+- **iPhone safe area**：3 个 screen 的 ScrollView paddingBottom 用 `BottomTabInset + useSafeAreaInsets().bottom + Spacing.four`（之前只 50pt 不够 iPhone home indicator 的 34pt）
+- **iOS dev client 要 $99 Apple Developer Program**：免费 Apple ID 在 Apple Developer Portal 注册后没有 device:create 权限。EAS Build iOS dev profile 暂时跑不通。Expo Go 走 SDK 54 路径作为替代
+- **Gemini 延迟 ~10-14s** 是 server 端 first-token 决定，client 无法优化。PersonaCard 的"✨ 正在解读你……" loading state 是产品化体验
 
 ---
 

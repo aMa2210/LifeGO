@@ -4,6 +4,7 @@ import { ThemedText } from "./themed-text";
 import { ThemedView } from "./themed-view";
 import { Spacing } from "@/constants/theme";
 import type { StoredCheckin } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 const WEIGHT_LABEL: Record<1 | 3 | 5, string> = {
   1: "👋",
@@ -22,10 +23,12 @@ type Props = {
  * (black-box principle — see PLAN.md §11.5).
  */
 export function Timeline({ checkins, limit = 10 }: Props) {
+  const t = useT();
+
   if (checkins.length === 0) {
     return (
       <ThemedText type="small" themeColor="textSecondary">
-        还没有打卡。
+        {t("timeline.empty")}
       </ThemedText>
     );
   }
@@ -68,8 +71,6 @@ export function Timeline({ checkins, limit = 10 }: Props) {
                 numberOfLines={1}
               >
                 {item.poi.area} · {item.poi.category}
-                {item.tags.length > 0 &&
-                  " · " + item.tags.slice(0, 2).join(" · ")}
               </ThemedText>
               {item.note && (
                 <ThemedText
@@ -91,7 +92,7 @@ export function Timeline({ checkins, limit = 10 }: Props) {
           themeColor="textSecondary"
           style={styles.more}
         >
-          + {hiddenCount} 条更早的打卡
+          {t("timeline.earlier", { n: hiddenCount })}
         </ThemedText>
       )}
     </View>

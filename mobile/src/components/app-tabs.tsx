@@ -1,39 +1,42 @@
-import { NativeTabs } from "expo-router/unstable-native-tabs";
-import { useColorScheme } from "react-native";
+// 3-tab bottom navigation using expo-router's NativeTabs.
+// Labels are localized via useT(); icons use SF Symbols on iOS + PNG on Android.
 
-import { Colors } from "@/constants/theme";
+import {
+  NativeTabs,
+  Label,
+  Icon,
+} from "expo-router/unstable-native-tabs";
+
+import { useT } from "@/lib/i18n";
 
 export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === "unspecified" ? "light" : scheme];
-
+  const t = useT();
   return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}
-    >
+    <NativeTabs>
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>主页</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require("@/assets/images/tabIcons/home.png")}
-          renderingMode="template"
+        <Label>{t("tabs.home")}</Label>
+        <Icon
+          sf={{ default: "house", selected: "house.fill" }}
+          androidSrc={require("@/assets/images/tabIcons/home.png")}
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="map">
-        <NativeTabs.Trigger.Label>探索</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require("@/assets/images/tabIcons/explore.png")}
-          renderingMode="template"
+        <Label>{t("tabs.map")}</Label>
+        <Icon
+          sf={{ default: "map", selected: "map.fill" }}
+          androidSrc={require("@/assets/images/tabIcons/explore.png")}
         />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Label>我</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require("@/assets/images/tabIcons/profile.png")}
-          renderingMode="template"
+        <Label>{t("tabs.profile")}</Label>
+        <Icon
+          sf={{
+            default: "person.crop.circle",
+            selected: "person.crop.circle.fill",
+          }}
+          androidSrc={require("@/assets/images/tabIcons/profile.png")}
         />
       </NativeTabs.Trigger>
     </NativeTabs>

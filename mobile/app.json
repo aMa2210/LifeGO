@@ -12,7 +12,8 @@
       "icon": "./assets/expo.icon",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "LifeGO uses your location to suggest places near you and to log check-ins."
+        "NSLocationWhenInUseUsageDescription": "LifeGO uses your location to suggest places near you and to log check-ins.",
+        "NSPhotoLibraryUsageDescription": "LifeGO needs photo library access so you can attach a photo to a check-in."
       }
     },
     "android": {
@@ -46,6 +47,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "983040c3-0c05-4292-813c-52049a28921a"
+      }
+    },
+    "owner": "makemoneyama"
   }
 }

@@ -1,16 +1,37 @@
-// Mapbox map. Requires EAS Build dev client — will not run in Expo Go.
-// Set EXPO_PUBLIC_MAPBOX_TOKEN in mobile/.env before building.
+// Mapbox map.
+// CRITICAL: `import` of @rnmapbox/maps triggers a native-module lookup at
+// module load time, which crashes inside Expo Go (no native module bundled).
+// We therefore use `import type` for compile-time types only, and a guarded
+// `require()` at runtime — so Expo Go never touches the native code path.
 
 import { StyleSheet, View } from "react-native";
-import Mapbox, { MapView, Camera, PointAnnotation } from "@rnmapbox/maps";
+import Constants from "expo-constants";
 
 import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { StaticMap } from "@/components/StaticMap";
+import { Spacing } from "@/constants/theme";
 import { TOKYO_POIS, type POI, type POICategory } from "@/lib/tokyo-pois";
+import { useT } from "@/lib/i18n";
 
 const TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+const IS_EXPO_GO = Constants.appOwnership === "expo";
 
-if (TOKEN) {
-  Mapbox.setAccessToken(TOKEN);
+// Lazy-load @rnmapbox/maps — only outside Expo Go.
+type MapboxModule = typeof import("@rnmapbox/maps");
+let mapboxModule: MapboxModule | null = null;
+
+if (!IS_EXPO_GO) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    mapboxModule = require("@rnmapbox/maps") as MapboxModule;
+    if (TOKEN && mapboxModule?.default) {
+      mapboxModule.default.setAccessToken(TOKEN);
+    }
+  } catch (err) {
+    // Native module not linked — falls through to placeholder render.
+    if (__DEV__) console.warn("@rnmapbox/maps load failed:", err);
+  }
 }
 
 const CATEGORY_COLORS: Record<POICategory, string> = {
@@ -35,15 +56,27 @@ type Props = {
 };
 
 export function Map({ onPOIPress }: Props) {
+  const t = useT();
+
+  // No Mapbox token → text placeholder.
   if (!TOKEN) {
     return (
       <View style={styles.placeholder}>
         <ThemedText themeColor="textSecondary">
-          EXPO_PUBLIC_MAPBOX_TOKEN 未配置
+          {t("map.tokenMissing")}
         </ThemedText>
       </View>
     );
   }
+
+  // Expo Go (or native module not linked) → render the static map fallback.
+  // It's a real Mapbox image with POI markers overlaid via Mercator math,
+  // so you get a recognizable Tokyo view + tappable POIs. No pan/zoom though.
+  if (IS_EXPO_GO || !mapboxModule) {
+    return <StaticMap onPOIPress={onPOIPress} />;
+  }
+
+  const { default: Mapbox, MapView, Camera, PointAnnotation } = mapboxModule;
 
   return (
     <View style={styles.container}>
@@ -88,6 +121,21 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    padding: Spacing.four,
+    borderRadius: 16,
+    gap: Spacing.two,
+  },
+  placeholderEmoji: {
+    fontSize: 48,
+    lineHeight: 56,
+  },
+  placeholderTitle: {
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  placeholderHint: {
+    textAlign: "center",
+    lineHeight: 20,
   },
   markerWrap: {
     width: 24,

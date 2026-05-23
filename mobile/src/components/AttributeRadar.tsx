@@ -5,6 +5,7 @@ import {
   ATTRIBUTE_LABELS,
   type Attributes,
 } from "@/lib/attributes";
+import { useLifeGOStore } from "@/lib/store";
 
 type Props = {
   attributes: Attributes;
@@ -13,6 +14,7 @@ type Props = {
 };
 
 export function AttributeRadar({ attributes, max = 12, size = 280 }: Props) {
+  const locale = useLifeGOStore((s) => s.locale);
   const cx = size / 2;
   const cy = size / 2;
   const r = size * 0.36;
@@ -22,7 +24,7 @@ export function AttributeRadar({ attributes, max = 12, size = 280 }: Props) {
     const ratio = Math.min(attributes[k] / max, 1);
     return {
       key: k,
-      label: ATTRIBUTE_LABELS[k].zh,
+      label: ATTRIBUTE_LABELS[k][locale === "en" ? "en" : "zh"],
       value: attributes[k],
       vx: cx + Math.cos(angle) * r,
       vy: cy + Math.sin(angle) * r,

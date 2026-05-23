@@ -1,5 +1,8 @@
-import { StyleSheet, ScrollView, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { StyleSheet, ScrollView, TouchableOpacity, View } from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -10,6 +13,13 @@ import { BottomTabInset, Spacing } from "@/constants/theme";
 import { useLifeGOStore } from "@/lib/store";
 import { ATTRIBUTE_KEYS, ATTRIBUTE_LABELS } from "@/lib/attributes";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
+import { useT, translate, type Locale } from "@/lib/i18n";
+import { MIA_USER } from "@/lib/fake-user";
+
+const LANG_OPTIONS: { value: Locale; label: string }[] = [
+  { value: "zh", label: "中文" },
+  { value: "en", label: "English" },
+];
 
 export default function ProfileScreen() {
   const {
@@ -19,19 +29,30 @@ export default function ProfileScreen() {
     resetToSeed,
     playReplay,
     isReplaying,
+    locale,
+    setLocale,
   } = useLifeGOStore();
+  const insets = useSafeAreaInsets();
+  const t = useT();
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: BottomTabInset + insets.bottom + Spacing.four },
+          ]}
           showsVerticalScrollIndicator={false}
         >
-          <ThemedText type="title">我</ThemedText>
+          <ThemedText type="title">{t("profile.title")}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            Mia Tanaka · Tokyo · {checkins.length} 次打卡
+            {t("profile.subtitle", {
+              name: MIA_USER.name,
+              city: MIA_USER.city,
+              n: checkins.length,
+            })}
           </ThemedText>
 
           <View style={styles.radarSlot}>
@@ -40,11 +61,13 @@ export default function ProfileScreen() {
 
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="small" themeColor="textSecondary">
-              6 轴属性（30 天半衰期衰减）
+              {t("profile.attrsHeader")}
             </ThemedText>
             {ATTRIBUTE_KEYS.map((k) => (
               <View key={k} style={styles.attrRow}>
-                <ThemedText>{ATTRIBUTE_LABELS[k].zh}</ThemedText>
+                <ThemedText>
+                  {ATTRIBUTE_LABELS[k][locale === "en" ? "en" : "zh"]}
+                </ThemedText>
                 <ThemedText type="code">{attributes[k]}</ThemedText>
               </View>
             ))}
@@ -52,20 +75,28 @@ export default function ProfileScreen() {
 
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="small" themeColor="textSecondary">
-              隐藏特质
+              {t("profile.eggsHeader")}
             </ThemedText>
             {eggs.length === 0 ? (
-              <ThemedText themeColor="textSecondary">尚未发现</ThemedText>
+              <ThemedText themeColor="textSecondary">
+                {t("profile.eggsEmpty")}
+              </ThemedText>
             ) : (
               eggs.map((id) => {
                 const e = EASTER_EGG_BY_ID[id];
+                const descKey =
+                  id === "nocturnal"
+                    ? "egg.nocturnal.desc"
+                    : id === "early-bird"
+                      ? "egg.early-bird.desc"
+                      : "egg.lone-wolf.desc";
                 return (
                   <View key={id} style={styles.eggRow}>
                     <ThemedText style={styles.eggEmoji}>{e.emoji}</ThemedText>
                     <View style={styles.eggBody}>
-                      <ThemedText>{e.title.zh}</ThemedText>
+                      <ThemedText>{e.title[locale] ?? e.title.zh}</ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">
-                        {e.description}
+                        {translate(descKey, locale)}
                       </ThemedText>
                     </View>
                   </View>
@@ -76,28 +107,59 @@ export default function ProfileScreen() {
 
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="small" themeColor="textSecondary">
-              最近打卡
+              {t("profile.timelineHeader")}
             </ThemedText>
             <Timeline checkins={checkins} limit={10} />
           </ThemedView>
 
+          {/* Language toggle */}
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="small" themeColor="textSecondary">
-              开发工具
+              🌐 {t("profile.languageHeader")}
+            </ThemedText>
+            <View style={styles.langRow}>
+              {LANG_OPTIONS.map((opt) => {
+                const isActive = locale === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    onPress={() => setLocale(opt.value)}
+                    style={[
+                      styles.langButton,
+                      isActive && styles.langButtonActive,
+                    ]}
+                  >
+                    <ThemedText
+                      style={[
+                        styles.langButtonText,
+                        isActive && styles.langButtonTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ThemedView>
+
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <ThemedText type="small" themeColor="textSecondary">
+              {t("profile.devToolsHeader")}
             </ThemedText>
             <ThemedText
               type="link"
               onPress={isReplaying ? undefined : () => playReplay()}
               style={[styles.actionLink, isReplaying && styles.disabledLink]}
             >
-              📽️ 投资人演示 — Replay Mia 的 3 天 (约 11 秒) →
+              {t("profile.replayAction")}
             </ThemedText>
             <ThemedText
               type="link"
               onPress={isReplaying ? undefined : resetToSeed}
               style={[styles.actionLink, isReplaying && styles.disabledLink]}
             >
-              重置为初始 14 条打卡 →
+              {t("profile.resetAction")}
             </ThemedText>
           </ThemedView>
         </ScrollView>
@@ -113,7 +175,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.four,
     gap: Spacing.three,
   },
   radarSlot: {
@@ -141,4 +202,28 @@ const styles = StyleSheet.create({
   eggBody: { flex: 1, gap: 2 },
   actionLink: { paddingVertical: Spacing.two },
   disabledLink: { opacity: 0.4 },
+  langRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  langButton: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three,
+    borderWidth: 1.5,
+    borderColor: "rgba(0,0,0,0.12)",
+    alignItems: "center",
+  },
+  langButtonActive: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  langButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  langButtonTextActive: {
+    color: "white",
+  },
 });

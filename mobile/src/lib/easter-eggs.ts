@@ -41,7 +41,8 @@ export const EASTER_EGG_BY_ID: Record<EasterEggId, EasterEgg> = Object.fromEntri
 
 type CheckinForEggs = {
   createdAt: Date | string;
-  tags: string[];
+  note?: string;
+  photoUrl?: string;
 };
 
 /**
@@ -65,12 +66,17 @@ export function checkEasterEggs(checkins: CheckinForEggs[]): EasterEggId[] {
     return h >= 22 || h < 5;
   }).length;
   const early = checkins.filter((c) => localHour(c.createdAt) < 7).length;
-  const soloRatio =
-    checkins.filter((c) => !c.tags.includes("with-friends")).length / checkins.length;
+
+  // Lone Wolf: counts check-ins that left a "personal trace" — note ≥30 chars
+  // or a photo attached. Reflects someone who pauses to record for themselves,
+  // not for an audience. (Replaces the previous "no with-friends tag" rule.)
+  const personalRecords = checkins.filter(
+    (c) => (c.note && c.note.length >= 30) || !!c.photoUrl
+  ).length;
 
   const eggs: EasterEggId[] = [];
   if (night >= 3) eggs.push("nocturnal");
   if (early >= 3) eggs.push("early-bird");
-  if (checkins.length >= 5 && soloRatio >= 0.8) eggs.push("lone-wolf");
+  if (personalRecords >= 5) eggs.push("lone-wolf");
   return eggs;
 }

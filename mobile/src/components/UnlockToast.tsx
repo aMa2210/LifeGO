@@ -9,23 +9,32 @@ import type { OverlayKey } from "@/lib/avatar-mapping";
 import { ThemedText } from "./themed-text";
 import { ThemedView } from "./themed-view";
 import { Spacing } from "@/constants/theme";
-
-const OVERLAY_LABELS: Partial<Record<OverlayKey, string>> = {
-  backpack:        "背包",
-  "explorer-hat":  "探险帽",
-  headband:        "运动头带",
-  sneakers:        "运动鞋",
-  laptop:          "笔记本电脑",
-  "coffee-cup":    "咖啡杯",
-  cardigan:        "学院针织衫",
-};
+import { useT, translate, type StringKey } from "@/lib/i18n";
 
 const VISIBLE_MS = 4000;
+
+const OVERLAY_LABEL_KEYS: Partial<Record<OverlayKey, StringKey>> = {
+  backpack: "overlay.backpack",
+  "explorer-hat": "overlay.explorer-hat",
+  headband: "overlay.headband",
+  sneakers: "overlay.sneakers",
+  laptop: "overlay.laptop",
+  "coffee-cup": "overlay.coffee-cup",
+  cardigan: "overlay.cardigan",
+};
+
+const EGG_DESC_KEYS: Record<string, StringKey> = {
+  nocturnal: "egg.nocturnal.desc",
+  "early-bird": "egg.early-bird.desc",
+  "lone-wolf": "egg.lone-wolf.desc",
+};
 
 export function UnlockToast() {
   const overlays = useLifeGOStore((s) => s.recentlyUnlockedOverlays);
   const eggs = useLifeGOStore((s) => s.recentlyUnlockedEggs);
+  const locale = useLifeGOStore((s) => s.locale);
   const clearRecent = useLifeGOStore((s) => s.clearRecent);
+  const t = useT();
 
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-30)).current;
@@ -85,23 +94,30 @@ export function UnlockToast() {
             ]}
           >
             <ThemedText style={styles.title}>
-              {isEggOnly ? "🎭 隐藏特质被发现" : "🎉 解锁新内容"}
+              {isEggOnly ? t("unlock.hiddenTrait") : t("unlock.newContent")}
             </ThemedText>
             {overlays.length > 0 && (
               <ThemedText type="small" style={styles.line}>
-                配件：
+                {t("unlock.accessoriesLabel")}
                 <ThemedText type="small" style={{ fontWeight: "500" }}>
-                  {overlays.map((k) => OVERLAY_LABELS[k] ?? k).join("、")}
+                  {overlays
+                    .map((k) => {
+                      const key = OVERLAY_LABEL_KEYS[k];
+                      return key ? translate(key, locale) : k;
+                    })
+                    .join(locale === "en" ? ", " : "、")}
                 </ThemedText>
               </ThemedText>
             )}
             {eggs.map((id) => {
               const e = EASTER_EGG_BY_ID[id];
+              const descKey = EGG_DESC_KEYS[id];
+              const desc = descKey ? translate(descKey, locale) : e.description;
               return (
                 <ThemedText key={id} type="small" style={styles.line}>
-                  {e.emoji} {e.title.zh} —{" "}
+                  {e.emoji} {e.title[locale] ?? e.title.zh} —{" "}
                   <ThemedText type="small" themeColor="textSecondary">
-                    {e.description}
+                    {desc}
                   </ThemedText>
                 </ThemedText>
               );

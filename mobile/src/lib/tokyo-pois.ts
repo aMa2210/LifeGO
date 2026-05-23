@@ -75,6 +75,36 @@ export const POI_BY_ID: Record<string, POI> = Object.fromEntries(
 );
 
 /**
+ * Derive check-in weight from content density (black-box principle — the user
+ * never picks a weight directly; the app rates the actual effort).
+ *
+ * Score:
+ *   - Photo attached: +2
+ *   - Note 10-29 chars: +1, 30-79 chars: +2, ≥80 chars: +3
+ *
+ * Mapping:
+ *   - score ≥ 4 → weight 5 (heavy / "story-worthy")
+ *   - score ≥ 1 → weight 3 (medium / "left a trace")
+ *   - else      → weight 1 (light / "just here")
+ */
+export function computeWeightFromContent(content: {
+  note?: string;
+  photoUrl?: string;
+}): 1 | 3 | 5 {
+  let score = 0;
+  if (content.photoUrl) score += 2;
+  if (content.note) {
+    const len = content.note.length;
+    if (len >= 80) score += 3;
+    else if (len >= 30) score += 2;
+    else if (len >= 10) score += 1;
+  }
+  if (score >= 4) return 5;
+  if (score >= 1) return 3;
+  return 1;
+}
+
+/**
  * Compute attribute delta from a POI + weight (no time-of-day attribute bonus —
  * easter eggs handle time-based patterns separately, see lib/easter-eggs.ts).
  */

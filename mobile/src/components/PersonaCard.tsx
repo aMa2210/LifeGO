@@ -10,17 +10,21 @@ import { ThemedText } from "./themed-text";
 import { ThemedView } from "./themed-view";
 import { Spacing } from "@/constants/theme";
 import { useLifeGOStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 export function PersonaCard() {
   const persona = useLifeGOStore((s) => s.persona);
   const loading = useLifeGOStore((s) => s.personaLoading);
   const error = useLifeGOStore((s) => s.personaError);
   const fetchPersona = useLifeGOStore((s) => s.fetchPersona);
+  const t = useT();
 
-  // Auto-fetch on mount (no-op if cached)
+  // Auto-fetch on mount, and re-fetch when locale changes (setLocale clears the
+  // cache, so this useEffect picks up the change and regenerates in the new language).
+  const locale = useLifeGOStore((s) => s.locale);
   useEffect(() => {
     fetchPersona();
-  }, [fetchPersona]);
+  }, [fetchPersona, locale]);
 
   // Loading state
   if (loading && !persona) {
@@ -29,7 +33,7 @@ export function PersonaCard() {
         <View style={styles.loadingRow}>
           <ActivityIndicator size="small" />
           <ThemedText type="small" themeColor="textSecondary">
-            ✨ 正在解读你……
+            {t("persona.loading")}
           </ThemedText>
         </View>
       </ThemedView>
@@ -41,13 +45,13 @@ export function PersonaCard() {
     return (
       <ThemedView type="backgroundElement" style={styles.card}>
         <ThemedText type="small" themeColor="textSecondary">
-          人格生成失败
+          {t("persona.errorTitle")}
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           {error}
         </ThemedText>
         <TouchableOpacity onPress={() => fetchPersona(true)}>
-          <ThemedText type="link">重试 →</ThemedText>
+          <ThemedText type="link">{t("persona.retry")}</ThemedText>
         </TouchableOpacity>
       </ThemedView>
     );

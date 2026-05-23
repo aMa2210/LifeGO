@@ -1,5 +1,4 @@
-// Activity recommendations via Gemini 2.5-flash.
-// Falls back to mock data when no API key.
+// Activity recommendations via Gemini 2.5-flash. Locale-aware (zh / en).
 
 import { SchemaType } from "@google/generative-ai";
 
@@ -7,15 +6,14 @@ import { llm, hasApiKey } from "./llm";
 import type { Persona } from "./persona";
 import type { Attributes } from "./attributes";
 import type { StoredCheckin } from "./store";
+import type { Locale } from "./i18n";
 
 export type Recommendation = {
-  /** Specific real-world place name. */
   place: string;
-  /** Neighborhood / district. */
   area: string;
-  /** Should be one of POICategory values from tokyo-pois.ts. */
+  /** Must match a POICategory value from tokyo-pois.ts. */
   category: string;
-  /** One-sentence Chinese rationale that ties to user's persona. */
+  /** One sentence rationale, in active locale. */
   why: string;
 };
 
@@ -39,7 +37,7 @@ const recommendSchema = {
   required: ["items"],
 };
 
-const MOCK_RECOMMENDATIONS: Recommendation[] = [
+const MOCK_RECOMMENDATIONS_ZH: Recommendation[] = [
   {
     place: "Shimokitazawa 古着街",
     area: "Shimokitazawa",
@@ -60,7 +58,28 @@ const MOCK_RECOMMENDATIONS: Recommendation[] = [
   },
 ];
 
-function timeOfDay(hour: number): string {
+const MOCK_RECOMMENDATIONS_EN: Recommendation[] = [
+  {
+    place: "Shimokitazawa Vintage Lanes",
+    area: "Shimokitazawa",
+    category: "walk",
+    why: "Continue your poetic foraging — every alley hides a detail no one else stops to notice.",
+  },
+  {
+    place: "Bookshop B (Higashi-Azabu)",
+    area: "Azabu",
+    category: "bookstore",
+    why: "A late-night bookshop, the right home for your soul that only completes itself after dark.",
+  },
+  {
+    place: "Mt. Takao Night Hike",
+    area: "Hachioji",
+    category: "walk",
+    why: "Level up your nocturnal trait — a mountain path under the stars is a reward for the lone walker.",
+  },
+];
+
+function timeOfDayZh(hour: number): string {
   if (hour < 6) return "深夜";
   if (hour < 11) return "上午";
   if (hour < 14) return "正午";
@@ -69,7 +88,16 @@ function timeOfDay(hour: number): string {
   return "夜晚";
 }
 
-const SYSTEM_PROMPT = `你是 LifeGO 的个性化活动推荐器。
+function timeOfDayEn(hour: number): string {
+  if (hour < 6) return "late night";
+  if (hour < 11) return "morning";
+  if (hour < 14) return "midday";
+  if (hour < 18) return "afternoon";
+  if (hour < 22) return "evening";
+  return "night";
+}
+
+const SYSTEM_PROMPT_ZH = `你是 LifeGO 的个性化活动推荐器。
 
 根据用户的人格画像和最近行为，为他们今天的下一次出门推荐 3 个具体地点。
 
@@ -83,27 +111,62 @@ const SYSTEM_PROMPT = `你是 LifeGO 的个性化活动推荐器。
 避免：用户已经打卡过的地方。
 只返回 JSON。`;
 
+const SYSTEM_PROMPT_EN = `You are LifeGO's personalized activity recommender.
+
+Given a user's persona and recent behavior, recommend 3 specific places for their next outing today.
+
+Each recommendation must include:
+- place: A specific real-world venue (a real place in the user's city — do NOT invent names).
+- area: Neighborhood or district.
+- category: Must be one of: cafe, chain-cafe, park, art, restaurant, bar, running, coworking, bookstore, gym, library, walk, livehouse, market.
+- why: One English sentence explaining why this place "gets" this user. Quote their persona title or a strength phrase verbatim so it feels uniquely chosen for them.
+
+Voice: like a knowing friend, NOT like Yelp/Tripadvisor. Output ALL fields in English.
+Avoid: places the user has already checked into.
+Return JSON only.`;
+
 export async function generateRecommendations({
   persona,
   attributes,
   checkins,
+  locale,
   city = "Tokyo",
 }: {
   persona: Persona;
   attributes: Attributes;
   checkins: StoredCheckin[];
+  locale: Locale;
   city?: string;
 }): Promise<Recommendation[]> {
   if (!hasApiKey()) {
     await new Promise((r) => setTimeout(r, 500));
-    return MOCK_RECOMMENDATIONS;
+    return locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH;
   }
 
   const now = new Date();
   const hour = now.getHours();
   const recentPlaces = checkins.slice(-10).map((c) => c.poi.name).join(", ");
 
-  const userPrompt = `用户人格: ${persona.title} (${persona.subtitle})
+  const userPrompt =
+    locale === "en"
+      ? `User persona: ${persona.title} (${persona.subtitle})
+Description: ${persona.description}
+Strength phrases: ${persona.strengths.join(" / ")}
+
+Current attribute state:
+- Explorer: ${attributes.explorer}
+- Social: ${attributes.social}
+- Athletic: ${attributes.athletic}
+- Foodie: ${attributes.foodie}
+- Aesthete: ${attributes.aesthete}
+- Productive: ${attributes.productive}
+
+City: ${city}
+Current time of day: ${timeOfDayEn(hour)} (${hour}:00)
+Places already visited (avoid repeating): ${recentPlaces || "none"}
+
+Recommend 3 specific activity venues (real ${city} places, fresh ones).`
+      : `用户人格: ${persona.title} (${persona.subtitle})
 人格描述: ${persona.description}
 特质短语: ${persona.strengths.join(" / ")}
 
@@ -116,14 +179,14 @@ export async function generateRecommendations({
 - 工作学习: ${attributes.productive}
 
 所在城市: ${city}
-当前时段: ${timeOfDay(hour)} (${hour}:00)
+当前时段: ${timeOfDayZh(hour)} (${hour}:00)
 最近打卡过的地方（请避免重复推荐）: ${recentPlaces || "无"}
 
 为这个用户推荐 3 个具体的活动地点（${city} 真实地点，要新鲜）。`;
 
   try {
     const raw = await llm({
-      system: SYSTEM_PROMPT,
+      system: locale === "en" ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_ZH,
       user: userPrompt,
       model: "flash",
       temperature: 0.9,
@@ -133,9 +196,10 @@ export async function generateRecommendations({
     if (Array.isArray(parsed.items) && parsed.items.length > 0) {
       return parsed.items.slice(0, 3);
     }
-    return MOCK_RECOMMENDATIONS;
+    return locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH;
   } catch (err) {
-    if (__DEV__) console.warn("generateRecommendations failed, using mock:", err);
-    return MOCK_RECOMMENDATIONS;
+    if (__DEV__)
+      console.warn("generateRecommendations failed, using mock:", err);
+    return locale === "en" ? MOCK_RECOMMENDATIONS_EN : MOCK_RECOMMENDATIONS_ZH;
   }
 }
