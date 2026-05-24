@@ -23,7 +23,6 @@ import {
 import { BottomTabInset, Spacing } from "@/constants/theme";
 
 import { useLifeGOStore } from "@/lib/store";
-import { MIA_USER } from "@/lib/fake-user";
 import { EASTER_EGG_BY_ID } from "@/lib/easter-eggs";
 import { MOOD_EMOJI, MOOD_LABEL_KEY, pruneMoods } from "@/lib/moods";
 import { useT, type StringKey } from "@/lib/i18n";
@@ -43,6 +42,7 @@ export default function HomeScreen() {
     character,
     eggs,
     checkins,
+    user,
     initialAvatarEditUsed,
     isReplaying,
     replayProgress,
@@ -88,8 +88,10 @@ export default function HomeScreen() {
               </ThemedText>
               <ThemedText type="title">LifeGO</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {MIA_USER.name} · {MIA_USER.city} · {checkins.length}{" "}
-                {t("home.checkins")}
+                {user.name || "—"}
+                {user.city ? ` · ${user.city}` : ""}
+                {" · "}
+                {checkins.length} {t("home.checkins")}
               </ThemedText>
             </>
           )}

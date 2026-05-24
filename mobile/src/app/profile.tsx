@@ -30,7 +30,7 @@ import {
 import { CHANGE_VIDEO_ASSET } from "@/lib/character-assets";
 import { EASTER_EGG_BY_ID, EASTER_EGGS, type EasterEggId } from "@/lib/easter-eggs";
 import { useT, type Locale, type StringKey } from "@/lib/i18n";
-import { useLifeGOStore } from "@/lib/store";
+import { useLifeGOStore, type StoredCheckin } from "@/lib/store";
 
 const LANG_OPTIONS: { value: Locale; label: string }[] = [
   { value: "zh", label: "中文" },
@@ -74,54 +74,108 @@ const TREND_COLOR: Record<TrendDirection, string> = {
   steady: "#64748b",
 };
 
-const TREND_ROWS: Record<"week" | "month", TrendRow[]> = {
-  week: [
-    {
-      id: "night",
-      direction: "up",
-      labelKey: "profile.trend.night.label",
-      phraseKey: "profile.trend.night.phrase.week",
-      intensity: 4,
-    },
-    {
-      id: "athletic",
-      direction: "down",
-      labelKey: "profile.trend.athletic.label",
-      phraseKey: "profile.trend.athletic.phrase.week",
-      intensity: 2,
-    },
-    {
-      id: "aesthete",
-      direction: "steady",
-      labelKey: "profile.trend.aesthete.label",
-      phraseKey: "profile.trend.aesthete.phrase.week",
-      intensity: 3,
-    },
-  ],
-  month: [
-    {
-      id: "night",
-      direction: "up",
-      labelKey: "profile.trend.night.label",
-      phraseKey: "profile.trend.night.phrase.month",
-      intensity: 5,
-    },
-    {
-      id: "athletic",
-      direction: "down",
-      labelKey: "profile.trend.athletic.label",
-      phraseKey: "profile.trend.athletic.phrase.month",
-      intensity: 2,
-    },
-    {
-      id: "aesthete",
-      direction: "up",
-      labelKey: "profile.trend.aesthete.label",
-      phraseKey: "profile.trend.aesthete.phrase.month",
-      intensity: 4,
-    },
-  ],
-};
+// ── Trend rows driven by real check-in stats ───────────────────────────────
+// Compare current window vs the equally-sized previous window for each of
+// the 6 axes; classify each as up/down/steady with an intensity score
+// derived from how big the change is. Show the 3 axes the user is *most
+// active in* (current + previous) — those are the lines that read as
+// "you" rather than as random noise from a one-off check-in.
+
+const TREND_UP_RATIO = 1.2; // ≥ +20% counts as "rising"
+const TREND_DOWN_RATIO = 0.8; // ≤ −20% counts as "fading"
+
+function sumDeltasByAxis(
+  checkins: StoredCheckin[],
+  startMs: number,
+  endMs: number
+): Record<AttributeKey, number> {
+  const out: Record<AttributeKey, number> = {
+    explorer: 0,
+    social: 0,
+    athletic: 0,
+    foodie: 0,
+    aesthete: 0,
+    productive: 0,
+  };
+  for (const c of checkins) {
+    const t = Date.parse(c.timestamp);
+    if (Number.isNaN(t) || t < startMs || t >= endMs) continue;
+    for (const [k, v] of Object.entries(c.attributeDelta)) {
+      if (typeof v === "number") out[k as AttributeKey] += v;
+    }
+  }
+  return out;
+}
+
+function computeTrendRows(
+  checkins: StoredCheckin[],
+  period: "week" | "month"
+): TrendRow[] {
+  const days = period === "week" ? 7 : 30;
+  const now = Date.now();
+  const windowMs = days * 86_400_000;
+  const current = sumDeltasByAxis(checkins, now - windowMs, now);
+  const previous = sumDeltasByAxis(
+    checkins,
+    now - 2 * windowMs,
+    now - windowMs
+  );
+
+  const axes: AttributeKey[] = [
+    "explorer",
+    "social",
+    "athletic",
+    "foodie",
+    "aesthete",
+    "productive",
+  ];
+
+  type Row = TrendRow & { _activity: number };
+  const rows: Row[] = axes.map((axis) => {
+    const cur = current[axis];
+    const prev = previous[axis];
+    let direction: TrendDirection;
+    let intensity: number;
+
+    if (cur === 0 && prev === 0) {
+      direction = "steady";
+      intensity = 0;
+    } else if (prev === 0) {
+      direction = "up";
+      intensity = Math.min(5, Math.max(1, Math.ceil(cur / 2)));
+    } else if (cur === 0) {
+      direction = "down";
+      intensity = Math.min(5, Math.max(1, Math.ceil(prev / 2)));
+    } else {
+      const ratio = cur / prev;
+      if (ratio >= TREND_UP_RATIO) {
+        direction = "up";
+        intensity = Math.min(5, Math.max(1, Math.ceil((ratio - 1) * 3)));
+      } else if (ratio <= TREND_DOWN_RATIO) {
+        direction = "down";
+        intensity = Math.min(5, Math.max(1, Math.ceil((1 - ratio) * 3)));
+      } else {
+        direction = "steady";
+        intensity = 2;
+      }
+    }
+    return {
+      id: axis,
+      direction,
+      labelKey: `attr.${axis}` as StringKey,
+      phraseKey: `profile.trend.${direction}` as StringKey,
+      intensity,
+      _activity: cur + prev,
+    };
+  });
+
+  // Show only axes the user has actually engaged with — sort by combined
+  // activity desc, drop ones with 0 activity (those would be noise), keep top 3.
+  rows.sort((a, b) => b._activity - a._activity);
+  const active = rows.filter((r) => r._activity > 0).slice(0, 3);
+  // Strip the private field before returning.
+  return active.map(({ _activity, ...row }) => row);
+}
 
 // ── Achievement archive (3 outfits × 3 states) ──────────────────────────
 type AchievementStatus = "active" | "fading" | "sleeping";
@@ -248,6 +302,10 @@ export default function ProfileScreen() {
   );
   const unlockedTraits = useMemo(() => unlockedTraitsFromEggs(eggs), [eggs]);
   const hasLockedTraits = unlockedTraits.length < EASTER_EGGS.length;
+  const trendRows = useMemo(
+    () => computeTrendRows(checkins, period),
+    [checkins, period]
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -278,16 +336,10 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* ── 人格年轮 ─────────────────────────────────────────── */}
+          {/* ── 行为趋势（人格年轮 minus video）─────────────────── */}
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="subtitle">
               {t("profile.growthRings.title")}
-            </ThemedText>
-            <GrowthRingSlot character={character} />
-            <ThemedText type="small" themeColor="textSecondary">
-              {character.hasSproutShapeTransition
-                ? t("character.growth.playingNote")
-                : t("character.growth.subtitle")}
             </ThemedText>
 
             <View style={styles.segmentRow}>
@@ -314,14 +366,17 @@ export default function ProfileScreen() {
               ))}
             </View>
 
-            <ThemedText type="smallBold">
-              {t("profile.growthRings.stageHeader")}
-            </ThemedText>
-            <View style={styles.trendList}>
-              {TREND_ROWS[period].map((row) => (
-                <TrendRowView key={row.id} row={row} />
-              ))}
-            </View>
+            {trendRows.length === 0 ? (
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("profile.trend.empty")}
+              </ThemedText>
+            ) : (
+              <View style={styles.trendList}>
+                {trendRows.map((row) => (
+                  <TrendRowView key={row.id} row={row} />
+                ))}
+              </View>
+            )}
           </ThemedView>
 
           {/* ── 成就档案：3 outfit × 3 态 ─────────────────────────── */}
@@ -453,7 +508,15 @@ export default function ProfileScreen() {
  *  reached stage-shape; otherwise shows the "生成中" placeholder. */
 function GrowthRingSlot({ character }: { character: CharacterState }) {
   const t = useT();
-  if (character.hasSproutShapeTransition) {
+  // Either the sticky flag (set by nextCharacter on first evolution) OR the
+  // current visual already being non-sprout. The second clause makes the
+  // video appear immediately for users whose persisted state was created
+  // before the flag's semantics broadened — they don't need to wait for the
+  // next addCheckin to re-trigger nextCharacter.
+  const evolvedNow =
+    character.visual !== "stage-sprout" &&
+    character.visual !== "in-development";
+  if (character.hasSproutShapeTransition || evolvedNow) {
     return <ChangeVideo />;
   }
   return (

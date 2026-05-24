@@ -31,9 +31,14 @@ export type ResolvedVisual = CharacterVisual | "in-development";
 
 export type CharacterState = {
   visual: ResolvedVisual;
-  /** Set the first time visual transitions TO stage-shape. Drives the
-   *  人格年轮 change.mp4 playback in Profile. Never reset except on full
-   *  reset-to-seed. */
+  /** Set true the first time the visual evolves away from the initial
+   *  sprout state — covers all paths (sprout → shape, sprout → outfit-*,
+   *  sprout → stage-awaken). Originally narrowed to "→ stage-shape" only,
+   *  but most archetypes skip stage-shape entirely (energetic→outfit-sport,
+   *  inspired→outfit-art, etc.), so they could never trigger the
+   *  人格年轮 change.mp4. Field name kept for backwards compatibility with
+   *  persisted state; the semantics are "has evolved past sprout".
+   *  Never reset except on full reset-to-seed. */
   hasSproutShapeTransition: boolean;
 };
 

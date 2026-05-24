@@ -260,11 +260,16 @@ function nextCharacter(
     initialAttrs: baselineAttrs,
   });
   const visualChanged = newVisual !== prev.visual;
-  const reachedShape = newVisual === "stage-shape";
+  // "Evolved past sprout" — anything other than the initial sprout (and the
+  // placeholder in-development) counts as progress, so the persona-rings
+  // video plays for every archetype, not just the few that pass through
+  // stage-shape. Sticky: once true, stays true.
+  const evolvedPastSprout =
+    newVisual !== "stage-sprout" && newVisual !== "in-development";
   const next: CharacterState = {
     visual: newVisual,
     hasSproutShapeTransition:
-      prev.hasSproutShapeTransition || reachedShape,
+      prev.hasSproutShapeTransition || evolvedPastSprout,
   };
   return {
     next,
@@ -306,8 +311,8 @@ function resolveInitialAvatarProfile(
   });
 }
 
-// ── Initial state from Mia's seed JSON ────────────────────────────────────
-const initialCheckins: StoredCheckin[] = miaData.checkins.map((c, i) => {
+// ── Mia sample data (loaded via loadMiaSample, not the default boot) ─────
+const miaSampleCheckins: StoredCheckin[] = miaData.checkins.map((c, i) => {
   const poi = POI_BY_ID[c.poiId];
   if (!poi) throw new Error(`Unknown POI in mia-trajectory.json: ${c.poiId}`);
   return {
@@ -322,38 +327,101 @@ const initialCheckins: StoredCheckin[] = miaData.checkins.map((c, i) => {
   };
 });
 
-const initial = recompute(initialCheckins);
-// No Q1 chosen yet → visual stays at sprout regardless of seed attrs.
-// Baseline matches current attrs (delta == 0) so no spurious shifts.
-const initialChar = nextCharacter(
-  INITIAL_CHARACTER,
-  initial.attributes,
-  initial.attributes,
-  null
-);
+// ── Persistence: hand-rolled localStorage on web (avoids zustand/middleware
+//    which uses import.meta.env that Metro can't transpile). Synchronous
+//    hydration before create() so consumers see persisted state immediately. ──
+const STORAGE_KEY = "lifego-store-v2"; // v2: character system + initialAvatar
+
+const hasWindow =
+  typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+
+type PersistedShape = {
+  user: User;
+  snapshotBeforeMia: LifeGOState["snapshotBeforeMia"];
+  checkins: StoredCheckin[];
+  locale: Locale;
+  persona: Persona | null;
+  character: CharacterState;
+  visualHistory: ResolvedVisual[];
+  dialogLog: DialogEntry[];
+  recentMoods: Mood[];
+  initialAvatarEditUsed: boolean;
+  initialAvatarEditSummary: InitialAvatarEditSummary | null;
+  initialAttributes: Attributes;
+  q1SnapshotAttrs: Attributes;
+  feedbackVoiceStyle: FeedbackVoiceStyle | null;
+};
+
+function loadPersisted(): PersistedShape | null {
+  if (!hasWindow) return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedShape>;
+    return {
+      user: { ...EMPTY_USER, ...(parsed.user ?? {}) },
+      snapshotBeforeMia: parsed.snapshotBeforeMia ?? null,
+      checkins: parsed.checkins ?? [],
+      locale: parsed.locale ?? "en", // default English
+      persona: parsed.persona ?? null,
+      character: parsed.character ?? INITIAL_CHARACTER,
+      visualHistory: parsed.visualHistory ?? [],
+      dialogLog: parsed.dialogLog ?? [],
+      recentMoods: parsed.recentMoods ?? [],
+      initialAvatarEditUsed: parsed.initialAvatarEditUsed ?? false,
+      initialAvatarEditSummary: parsed.initialAvatarEditSummary ?? null,
+      initialAttributes:
+        parsed.initialAttributes ?? { ...EMPTY_INITIAL_ATTRIBUTES },
+      q1SnapshotAttrs:
+        parsed.q1SnapshotAttrs ?? { ...EMPTY_INITIAL_ATTRIBUTES },
+      feedbackVoiceStyle: parsed.feedbackVoiceStyle ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersisted(s: PersistedShape) {
+  if (!hasWindow) return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch {
+    // localStorage full / disabled — silently skip.
+  }
+}
+
+// ── Boot: rehydrate from storage OR fall back to a clean EMPTY_USER (which
+//    routes to Onboarding). Mia's trajectory is opt-in via loadMiaSample. ──
+const persisted = loadPersisted();
+const bootUser = persisted?.user ?? EMPTY_USER;
+const bootCheckins = persisted?.checkins ?? [];
+const bootLocale = persisted?.locale ?? "en";
+const initial = recompute(bootCheckins);
+const bootCharacter = persisted?.character ?? INITIAL_CHARACTER;
+const bootVisualHistory =
+  persisted?.visualHistory ?? addToVisualHistory([], bootCharacter.visual);
 
 // ── Store ─────────────────────────────────────────────────────────────────
 export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
-  // Default boot: Mia's identity + her 14-checkin trajectory (so the demo
-  // looks right on first launch). Real onboarding (boot to EMPTY_USER then
-  // gate on hasOnboarded) is a follow-up — needs persistence first.
-  user: MIA_USER,
-  snapshotBeforeMia: null,
+  // Default boot: clean EMPTY_USER → routes through Onboarding. Returning
+  // users see their persisted state. Mia is opt-in via loadMiaSample.
+  user: bootUser,
+  snapshotBeforeMia: persisted?.snapshotBeforeMia ?? null,
   _hydrated: true,
-  checkins: initialCheckins,
-  seed: miaData.user.seed,
+  checkins: bootCheckins,
+  seed: bootUser.seed,
   attributes: initial.attributes,
   attributesPeak: initial.attributesPeak,
   eggs: initial.eggs,
   recentlyUnlockedEggs: [],
 
-  character: initialChar.next,
-  visualHistory: addToVisualHistory([], initialChar.next.visual),
+  character: bootCharacter,
+  visualHistory: bootVisualHistory,
   pendingVisualEvents: [],
-  recentMoods: [],
-  dialogLog: [],
+  recentMoods: persisted?.recentMoods ?? [],
+  dialogLog: persisted?.dialogLog ?? [],
 
-  persona: null,
+  persona: persisted?.persona ?? null,
   personaLoading: false,
   personaError: null,
 
@@ -363,12 +431,13 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
 
   isReplaying: false,
   replayProgress: null,
-  locale: "zh",
-  initialAvatarEditUsed: false,
-  initialAvatarEditSummary: null,
-  initialAttributes: { ...EMPTY_INITIAL_ATTRIBUTES },
-  q1SnapshotAttrs: initial.attributes,
-  feedbackVoiceStyle: null,
+  locale: bootLocale,
+  initialAvatarEditUsed: persisted?.initialAvatarEditUsed ?? false,
+  initialAvatarEditSummary: persisted?.initialAvatarEditSummary ?? null,
+  initialAttributes:
+    persisted?.initialAttributes ?? { ...EMPTY_INITIAL_ATTRIBUTES },
+  q1SnapshotAttrs: persisted?.q1SnapshotAttrs ?? initial.attributes,
+  feedbackVoiceStyle: persisted?.feedbackVoiceStyle ?? null,
 
   addCheckin: (input) => {
     const id = `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -412,26 +481,34 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
         : { recommendations: null }),
     });
 
-    // Fire-and-forget AI dialog.
-    (async () => {
-      const before = get();
-      const text = await generateDialog({
-        checkin: newCheckin,
-        attrs: before.attributes,
-        voiceStyle: before.feedbackVoiceStyle,
-        history: before.dialogLog,
-        locale: before.locale,
-      });
-      const entry: DialogEntry = {
-        id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-        checkinId: newCheckin.id,
-        text,
-        voiceStyle: before.feedbackVoiceStyle,
-        locale: before.locale,
-        timestamp: Date.now(),
-      };
-      set((s) => ({ dialogLog: [...s.dialogLog, entry] }));
-    })();
+    // Fire-and-forget AI dialog. To save Gemini quota, generate ONLY on the
+    // first check-in (so the user always sees an initial dialog) and then
+    // probabilistically — 1-in-5 odds afterwards. When skipped, DialogBubble
+    // keeps showing the previous line, which feels natural and avoids
+    // burning a quota slot on every routine check-in.
+    const before = get();
+    const isFirstDialog = before.dialogLog.length === 0;
+    const shouldGenerate = isFirstDialog || Math.random() < 0.2;
+    if (shouldGenerate) {
+      (async () => {
+        const text = await generateDialog({
+          checkin: newCheckin,
+          attrs: before.attributes,
+          voiceStyle: before.feedbackVoiceStyle,
+          history: before.dialogLog,
+          locale: before.locale,
+        });
+        const entry: DialogEntry = {
+          id: `d_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+          checkinId: newCheckin.id,
+          text,
+          voiceStyle: before.feedbackVoiceStyle,
+          locale: before.locale,
+          timestamp: Date.now(),
+        };
+        set((s) => ({ dialogLog: [...s.dialogLog, entry] }));
+      })();
+    }
 
     return newCheckin;
   },
@@ -445,7 +522,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
     const seed = prev.initialAvatarEditSummary
       ? seedFromInitialAvatarEdit(prev.initialAvatarEditSummary)
       : miaData.user.seed;
-    const r = recompute(initialCheckins, prev.initialAttributes);
+    const r = recompute(miaSampleCheckins, prev.initialAttributes);
     const archetypeId = prev.initialAvatarEditSummary?.archetypeId ?? null;
     // Reset transitions: start from INITIAL_CHARACTER so the change.mp4 flag
     // can re-trigger if user re-enters shape.
@@ -457,7 +534,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       archetypeId
     );
     set({
-      checkins: initialCheckins,
+      checkins: miaSampleCheckins,
       seed,
       attributes: r.attributes,
       attributesPeak: r.attributesPeak,
@@ -561,15 +638,15 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       // Snapshot the bottom of the replay so deltas grow as checkins play.
       q1SnapshotAttrs: emptyAttrs,
       isReplaying: true,
-      replayProgress: { current: 0, total: initialCheckins.length, day: 0 },
+      replayProgress: { current: 0, total: miaSampleCheckins.length, day: 0 },
     });
 
     await sleep(800);
 
     const accumulatedEvents: VisualChangeEvent[] = [];
 
-    for (let i = 0; i < initialCheckins.length; i++) {
-      const c = initialCheckins[i];
+    for (let i = 0; i < miaSampleCheckins.length; i++) {
+      const c = miaSampleCheckins[i];
       const day = parseInt(c.timestamp.slice(8, 10), 10) - 19;
 
       set((state) => {
@@ -599,7 +676,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
         };
       });
 
-      const nextC = initialCheckins[i + 1];
+      const nextC = miaSampleCheckins[i + 1];
       const isDayBoundary =
         !!nextC && nextC.timestamp.slice(8, 10) !== c.timestamp.slice(8, 10);
       await sleep(isDayBoundary ? 1200 : 550);
@@ -615,12 +692,17 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
   },
 
   setLocale: (locale) => {
+    // Invalidate any LLM-generated content cached in the previous locale.
+    // dialogLog cleared so the bubble doesn't show a stale Chinese line in
+    // an English UI (or vice versa) — next check-in regenerates in the
+    // current locale.
     set({
       locale,
       persona: null,
       personaError: null,
       recommendations: null,
       recommendationsError: null,
+      dialogLog: [],
     });
   },
 
@@ -784,7 +866,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
       q1SnapshotAttrs: prev.q1SnapshotAttrs,
       feedbackVoiceStyle: prev.feedbackVoiceStyle,
     };
-    const r = recompute(initialCheckins);
+    const r = recompute(miaSampleCheckins);
     const { next: nextChar } = nextCharacter(
       INITIAL_CHARACTER,
       r.attributes,
@@ -794,7 +876,7 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
     set({
       user: MIA_USER,
       snapshotBeforeMia: snapshot,
-      checkins: initialCheckins,
+      checkins: miaSampleCheckins,
       seed: miaData.user.seed,
       attributes: r.attributes,
       attributesPeak: r.attributesPeak,
@@ -852,6 +934,34 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
     });
   },
 }));
+
+// Subscribe once: any time persisted slice changes, write to localStorage.
+if (hasWindow) {
+  let prev = "";
+  useLifeGOStore.subscribe((s) => {
+    const slice: PersistedShape = {
+      user: s.user,
+      snapshotBeforeMia: s.snapshotBeforeMia,
+      checkins: s.checkins,
+      locale: s.locale,
+      persona: s.persona,
+      character: s.character,
+      visualHistory: s.visualHistory,
+      dialogLog: s.dialogLog,
+      recentMoods: s.recentMoods,
+      initialAvatarEditUsed: s.initialAvatarEditUsed,
+      initialAvatarEditSummary: s.initialAvatarEditSummary,
+      initialAttributes: s.initialAttributes,
+      q1SnapshotAttrs: s.q1SnapshotAttrs,
+      feedbackVoiceStyle: s.feedbackVoiceStyle,
+    };
+    const next = JSON.stringify(slice);
+    if (next !== prev) {
+      prev = next;
+      savePersisted(slice);
+    }
+  });
+}
 
 export type { Attributes, AttributeDelta };
 export { ATTRIBUTE_KEYS };

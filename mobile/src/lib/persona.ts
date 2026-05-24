@@ -60,35 +60,19 @@ const MOCK_PERSONA_EN: Persona = {
 // the tone the user picked during onboarding. Layered on top of the random
 // voice rotation below.
 
-const VOICE_LABEL_ZH: Record<FeedbackVoiceStyle, string> = {
-  praise: "夸夸型反馈",
-  gentle: "温柔陪伴型反馈",
-  game: "RPG 任务型反馈",
-  friend: "朋友聊天型反馈",
-  coach: "教练推动型反馈",
-  mirror: "镜子观察型反馈",
-};
-
-const VOICE_LABEL_EN: Record<FeedbackVoiceStyle, string> = {
-  praise: "praise-first",
-  gentle: "gentle companion",
-  game: "RPG quest",
-  friend: "close friend",
-  coach: "coach-like",
-  mirror: "reflective mirror",
-};
-
+// `applyPersonaVoice` previously prepended a meta label like
+// "Voice style: gentle companion." / "反馈语气：温柔陪伴型反馈。" to the
+// persona description. That label was UX noise — the user picked the
+// voice themselves, no reason to remind them, and it broke the immersion
+// of the persona prose. Voice style still influences `lib/dialog.ts`
+// (per-check-in line), which is the right place for it. The function is
+// kept as a no-op so callers don't need to be touched.
 function applyPersonaVoice(
   persona: Persona,
-  locale: Locale,
-  voiceStyle?: FeedbackVoiceStyle | null
+  _locale: Locale,
+  _voiceStyle?: FeedbackVoiceStyle | null
 ): Persona {
-  if (!voiceStyle) return persona;
-  const prefix =
-    locale === "en"
-      ? `Voice style: ${VOICE_LABEL_EN[voiceStyle]}. `
-      : `反馈语气：${VOICE_LABEL_ZH[voiceStyle]}。`;
-  return { ...persona, description: `${prefix}${persona.description}` };
+  return persona;
 }
 
 // ── Voice rotation ─────────────────────────────────────────────────────────
