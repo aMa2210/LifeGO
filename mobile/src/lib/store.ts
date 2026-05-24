@@ -592,7 +592,15 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
         return;
       }
     }
-    set({ recommendationsLoading: true, recommendationsError: null });
+    // When force=true (Show me 3 more), clear the previous list first so
+    // the UI visibly switches into loading state — otherwise the user sees
+    // the same old cards until the new fetch resolves and thinks nothing
+    // happened.
+    set({
+      recommendationsLoading: true,
+      recommendationsError: null,
+      ...(force ? { recommendations: null } : {}),
+    });
     try {
       const recommendations = await generateRecommendations({
         persona,
@@ -601,6 +609,9 @@ export const useLifeGOStore = create<LifeGOStore>((set, get) => ({
         locale: state.locale,
         voiceStyle: state.feedbackVoiceStyle,
         visual: state.character.visual,
+        // Tell the LLM which places it already suggested this session so it
+        // genuinely picks fresh ones on "Show me 3 more".
+        excludePlaces: state.recommendations?.map((r) => r.place) ?? [],
       });
       set({ recommendations, recommendationsLoading: false });
     } catch (err) {

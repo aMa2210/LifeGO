@@ -165,6 +165,7 @@ export async function generateRecommendations({
   voiceStyle,
   visual,
   user,
+  excludePlaces,
 }: {
   persona: Persona;
   attributes: Attributes;
@@ -173,11 +174,18 @@ export async function generateRecommendations({
   voiceStyle?: FeedbackVoiceStyle | null;
   visual?: ResolvedVisual;
   user?: { name: string; city: string };
+  /** Place names the caller has already shown to the user this session.
+   *  When non-empty, we bypass the visual-pinned lookup (which always
+   *  returns the same 3 fixed entries) and go straight to the LLM with
+   *  these places marked as "avoid". This makes "Show me 3 more" actually
+   *  show 3 *more*, not the same 3 again. */
+  excludePlaces?: string[];
 }): Promise<Recommendation[]> {
+  const hasExclusions = (excludePlaces?.length ?? 0) > 0;
   // ── Visual-pinned recommendations (3 per visual). Home character ↔
-  //     persona text ↔ "今天做什么" recs stay in lockstep. Pinned table
-  //     wins over LLM when we have a known visual.
-  if (visual && visual !== "in-development") {
+  //     persona text ↔ "今天做什么" recs stay in lockstep on first open.
+  //     Skipped on refresh so the LLM can produce genuinely new places.
+  if (!hasExclusions && visual && visual !== "in-development") {
     return applyRecommendationVoice(
       localizeRecommendations(visual, locale),
       locale,
@@ -204,6 +212,9 @@ export async function generateRecommendations({
   const now = new Date();
   const hour = now.getHours();
   const recentPlaces = checkins.slice(-10).map((c) => c.poi.name).join(", ");
+  // Merge places we've already shown this session with recently-visited ones
+  // so the LLM never proposes any of them again on this fetch.
+  const avoidList = [...new Set([...(excludePlaces ?? []), ...checkins.slice(-10).map((c) => c.poi.name)])].join(", ");
 
   const userPrompt =
     locale === "en"
@@ -221,7 +232,7 @@ Current attribute state:
 
 City: ${city}
 Current time of day: ${timeOfDayEn(hour)} (${hour}:00)
-Places already visited (avoid repeating): ${recentPlaces || "none"}
+Avoid all of these places (already visited or already suggested today): ${avoidList || "none"}
 
 Recommend 3 specific activity venues (real ${city} places, fresh ones).`
       : `${userNameLine}用户人格: ${persona.title} (${persona.subtitle})
@@ -238,7 +249,7 @@ Recommend 3 specific activity venues (real ${city} places, fresh ones).`
 
 所在城市: ${city}
 当前时段: ${timeOfDayZh(hour)} (${hour}:00)
-最近打卡过的地方（请避免重复推荐）: ${recentPlaces || "无"}
+绝对不要推荐这些地方（已经去过或已经推荐过）: ${avoidList || "无"}
 
 为这个用户推荐 3 个具体的活动地点（${city} 真实地点，要新鲜）。`;
 

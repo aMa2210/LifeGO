@@ -59,14 +59,26 @@ export const RecommendDialog = forwardRef<RecommendDialogHandle>(
         handleIndicatorStyle={{ backgroundColor: theme.textSecondary }}
       >
         <BottomSheetScrollView contentContainerStyle={styles.content}>
-          <ThemedText type="subtitle">
-            {persona
-              ? t("recommend.dialogTitle.withPersona", { persona: persona.title })
-              : t("recommend.dialogTitle.default")}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {t("recommend.subtitle")}
-          </ThemedText>
+          <View style={styles.headerRow}>
+            <View style={styles.headerTextBlock}>
+              <ThemedText type="subtitle">
+                {persona
+                  ? t("recommend.dialogTitle.withPersona", { persona: persona.title })
+                  : t("recommend.dialogTitle.default")}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("recommend.subtitle")}
+              </ThemedText>
+            </View>
+            <TouchableOpacity
+              onPress={() => sheetRef.current?.dismiss()}
+              hitSlop={12}
+              style={styles.closeButton}
+              accessibilityLabel="Close"
+            >
+              <ThemedText style={styles.closeIcon}>✕</ThemedText>
+            </TouchableOpacity>
+          </View>
 
           {loading && (
             <View style={styles.loading}>
@@ -165,5 +177,28 @@ const styles = StyleSheet.create({
   refreshButton: {
     alignSelf: "center",
     paddingVertical: Spacing.two,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  headerTextBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  closeIcon: {
+    fontSize: 16,
+    lineHeight: 18,
+    fontWeight: "600",
   },
 });
