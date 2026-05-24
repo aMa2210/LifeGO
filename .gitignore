@@ -48,7 +48,7 @@ next-env.d.ts
 mobile/node_modules
 mobile/.expo
 mobile/.expo-shared
-mobile/dist
+# mobile/dist — kept in git so eazo / static hosts can deploy without running Metro
 mobile/web-build
 mobile/ios
 mobile/android

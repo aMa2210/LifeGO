@@ -5,7 +5,7 @@ node_modules/
 
 # Expo
 .expo/
-dist/
+# dist/ — kept in git so eazo / static hosts can deploy without running Metro
 web-build/
 expo-env.d.ts
 
